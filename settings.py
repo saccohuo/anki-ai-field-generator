@@ -1,5 +1,6 @@
 from aqt import mw, pyqtSignal, QObject
-from aqt.qt import *
+from aqt.qt import QSettings, QLabel, QDialog, QWidget, QVBoxLayout, QFont, QLineEdit, QTextEdit, QDialogButtonBox, QScrollArea
+from aqt.qt import Qt
 
 
 API_KEY_SETTING_NAME = "api_key"
@@ -20,10 +21,10 @@ class Settings(QObject):
     def _on_settings_dialog_changed(self):
         self.on_change.emit()
 
-    def show(self):
+    def show(self, parent):
         # TODO: instead of creating a new object every time I could just reload the settings,
         # it would be cleaner. Currently not a problem though.
-        settings_dialog = SettingsDialog(self.app_settings, mw)
+        settings_dialog = SettingsDialog(self.app_settings, parent)
         settings_dialog.on_change.connect(self._on_settings_dialog_changed)
         settings_dialog.show()
 
@@ -50,6 +51,7 @@ class SettingsDialog(QDialog):
         super(SettingsDialog, self).__init__(*args, **kwargs)
         self.app_settings = app_settings
 
+        self.setWindowModality(Qt.WindowModality.NonModal)
         self.setWindowTitle("Anki GPT Settings")
         container_widget = QWidget()
         layout = QVBoxLayout(container_widget)

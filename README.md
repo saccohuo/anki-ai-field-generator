@@ -1,1 +1,1 @@
-# anki-gpt
+# anki-ai-field-generator

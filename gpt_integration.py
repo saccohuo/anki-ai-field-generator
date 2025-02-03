@@ -28,11 +28,21 @@ def on_field_filter(field_text: str, field_name: str, filter_name: str, ctx: Tem
     return field_text
 
 
-app_settings = Settings()
-cps_action = QAction("Anki GPT Settings", mw)
-cps_action.triggered.connect(app_settings.show)
-mw.form.menuTools.addAction(cps_action)
+def on_setup_menus(browser):
+    def temp():
+        app_settings.show(browser)
 
+    menu = QMenu("Anki AI", browser.form.menubar)
+    browser.form.menubar.addMenu(menu)
+    cps_action = QAction("Anki AI Settings", mw)
+    cps_action.triggered.connect(temp)
+    menu.addAction(cps_action)
+
+
+hooks.addHook('browser.setupMenus', on_setup_menus)
+
+
+app_settings = Settings()
 # TODO: handle if required settings don't exist
 prompt_config = PromptConfig(app_settings)
 client = OpenAIClient(prompt_config)
