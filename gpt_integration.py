@@ -5,6 +5,7 @@ from anki.template import TemplateRenderContext
 
 from .exceptions import ExternalException, show_error_dialog
 from .future_notes import FutureNotes
+from .modify_cards_ui import ModifyCardsUI
 from .openai_client import OpenAIClient
 from .prompt_config import PromptConfig
 from .settings import Settings
@@ -30,7 +31,7 @@ def on_field_filter(field_text: str, field_name: str, filter_name: str, ctx: Tem
 
 def on_setup_menus(browser):
     def temp():
-        app_settings.show(browser)
+        modify_cards_ui.show(browser)
 
     menu = QMenu("Anki AI", browser.form.menubar)
     browser.form.menubar.addMenu(menu)
@@ -42,6 +43,7 @@ def on_setup_menus(browser):
 hooks.addHook('browser.setupMenus', on_setup_menus)
 
 
+modify_cards_ui = ModifyCardsUI()
 app_settings = Settings()
 # TODO: handle if required settings don't exist
 prompt_config = PromptConfig(app_settings)
