@@ -12,15 +12,16 @@ class OpenAIClient:
         self.config = config
         self.debug = False
 
-    def modify_sentence_and_translate(self, note_infos: list[NoteInfo]) -> list[dict]:
-        if not note_infos:
-            raise Exception("Note info list should not be empty")
+    def call(self, prompts: list[str]) -> list[dict]:
+        if not prompts:
+            raise Exception("Empty list of prompts given")
         url = "https://api.openai.com/v1/chat/completions"
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.config.api_key}"
         }
-        user_input = "\n\n".join([note.get_user_prompt() for note in note_infos])
+        # This supports multiple prompts (newline-separated) if we switch back to batch processing.
+        user_input = "\n\n".join(prompts)
         if self.debug:
             print(f"Content String: {user_input}\n")
             print(f"System Prompt: {self.config.system_prompt}\n")
@@ -49,17 +50,16 @@ class OpenAIClient:
             else:
                 raise ExternalException(f'Error: {response.status_code} {response.reason}')
 
-        return self.parse_json_response(response=response.json(), expected_length=len(note_infos), user_input=user_input)
+        return self.parse_json_response(response=response.json(), expected_length=len(prompts), user_input=user_input)
 
     def parse_json_response(self, response, expected_length: int, user_input: str = None) -> list[dict]:
         message_content = response['choices'][0]['message']['content']
-        sentences = json.loads(message_content)['results']
-        if len(sentences) != expected_length:
-            print((f"WARNING: Results size of {len(sentences)} didn't match input length of {expected_length}.\n"
+        results = json.loads(message_content)['results']
+        if len(results) != expected_length:
+            print((f"WARNING: Results size of {len(results)} didn't match input length of {expected_length}.\n"
                   "This is normally just ChatGPT being weird and not doing what you told it to do in the prompt.\n"
-                  f'The "content" passed to ChatGPT was:\n{user_input}\nand the response was:\n{message_content}\n'
-                  'Sometimes, if you only passed one sentence, ChatGPT outputs two, which isn\'t a problem.'))
+                  f'The "content" passed to ChatGPT was:\n{user_input}\nand the response was:\n{message_content}'))
         if self.debug:
-            for i, sentence in enumerate(sentences):
+            for i, sentence in enumerate(results):
                 print(f"Result {i}: {sentence}")
-        return sentences
+        return results
