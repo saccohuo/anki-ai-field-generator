@@ -23,7 +23,7 @@ class PromptConfig:
         obj.api_key = api_key
         obj.system_prompt = system_prompt
         obj.user_prompt = user_prompt
-        obj.response_keys = [key.strip() for key in response_keys.split(",")]
+        obj.response_keys = response_keys
         obj.required_fields = obj._extract_text_between_braces(obj.user_prompt)
         return obj
 
@@ -40,12 +40,11 @@ class PromptConfig:
         self.user_prompt: str = self.settings.value(
             SettingsNames.USER_PROMPT_SETTING_NAME, defaultValue="", type=str
         )
-        self.response_keys: list[str] = [
-            key.strip()
-            for key in self.settings.value(
-                SettingsNames.RESPONSE_KEYS_SETTING_NAME, defaultValue="", type=str
-            ).split(",")
-        ]
+        self.response_keys: list[str] = self.settings.value(
+            SettingsNames.RESPONSE_KEYS_SETTING_NAME,
+            defaultValue=[],
+            type="QStringList",
+        )
         self.required_fields: list[str] = self._extract_text_between_braces(
             self.user_prompt
         )

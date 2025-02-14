@@ -2,7 +2,6 @@ import json
 import requests
 
 from .exceptions import ExternalException
-from .note_info import NoteInfo
 from .response_utils import get_response_format
 from .prompt_config import PromptConfig
 
@@ -35,28 +34,27 @@ class OpenAIClient:
         }
 
         try:
-            response = requests.post(url, headers=headers, json=data)
-        except requests.exceptions.ConnectionError:
+            response = requests.post(url, headers=headers, json=data, timeout=30)
+        except requests.exceptions.ConnectionError as exc:
             raise ExternalException(
-                f"ConnectionError, could not access the OpenAI service.\n"
-                f"Are you sure you have an internet connection?"
-            )
+                "ConnectionError, could not access the OpenAI service.\n"
+                "Are you sure you have an internet connection?"
+            ) from exc
 
         try:
             response.raise_for_status()
-        except requests.exceptions.HTTPError:
+        except requests.exceptions.HTTPError as exc:
             if response.status_code == 401:
                 raise ExternalException(
                     'Received an "Unauthorized" response; your API key is probably invalid.'
-                )
-            elif response.status_code == 429:
+                ) from exc
+            if response.status_code == 429:
                 raise ExternalException(
                     'Received a "429 Client Error: Too Many Requests" response; you might be rate limited to 3 requests per minute.'
-                )
-            else:
-                raise ExternalException(
-                    f"Error: {response.status_code} {response.reason}"
-                )
+                ) from exc
+            raise ExternalException(
+                f"Error: {response.status_code} {response.reason}"
+            ) from exc
 
         return self.parse_json_response(
             response=response.json(),

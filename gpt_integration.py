@@ -1,5 +1,5 @@
 from aqt import mw
-from aqt.qt import *
+from aqt.qt import QAction, QMenu
 from anki import hooks
 
 from .modify_cards_ui import ModifyCardsUI
