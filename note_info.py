@@ -2,6 +2,7 @@ from enum import Enum
 
 from .prompt_config import PromptConfig
 
+
 class LoadStatus(Enum):
     FAILURE = 0
     SUCCESS = 1
@@ -12,6 +13,7 @@ class NoteInfo:
     """
     Stores the relevant information from a note that will be sent to GPT for modification.
     """
+
     def __init__(self, prompt_config: PromptConfig):
         self.load_status: LoadStatus = LoadStatus.UNKNOWN
         self.prompt_config: PromptConfig = prompt_config
@@ -43,9 +45,11 @@ class NoteInfo:
         Replaces any keys in {braces} in the string with actual values from the Note. Substitutes a blank string if the Note
         did not have the corresponding key.
         """
+
         class DefaultDict(dict):
             def __missing__(self, key):
-                return ''
+                return ""
+
         return s.format_map(DefaultDict(self.field_dict))
 
     def get_user_prompt(self) -> str:

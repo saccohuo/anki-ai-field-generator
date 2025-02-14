@@ -14,7 +14,13 @@ class FutureNotes:
     Stores the next N notes to send a batch request to GPT.
     This improves performance and reduces cost and rate limiting.
     """
-    def __init__(self, openai_client: OpenAIClient, prompt_config: PromptConfig, num_notes_to_store: int=5):
+
+    def __init__(
+        self,
+        openai_client: OpenAIClient,
+        prompt_config: PromptConfig,
+        num_notes_to_store: int = 5,
+    ):
         self.erase_past_notes = False
         self.client = openai_client
         self.num_notes_to_store = num_notes_to_store
@@ -43,7 +49,9 @@ class FutureNotes:
             self.note_infos = {}
         scheduler = mw.col.sched
         scheduler.getCard()
-        next_cards = scheduler.get_queued_cards(fetch_limit=self.num_notes_to_store).cards
+        next_cards = scheduler.get_queued_cards(
+            fetch_limit=self.num_notes_to_store
+        ).cards
         new_note_list: list[NoteInfo] = []
         for i in range(min(self.num_notes_to_store, len(next_cards))):
             next_card = next_cards[i].card
@@ -57,8 +65,10 @@ class FutureNotes:
                 if note_info.is_loaded_successfully():
                     new_note_list.append(note_info)
         if new_note_list:
-            updated_note_datas = self.client.modify_sentence_and_translate(new_note_list)
+            updated_note_datas = self.client.modify_sentence_and_translate(
+                new_note_list
+            )
             # Trim to make sure we didn't get more responses than we have notes - sometimes ChatGPT is a little overzealous.
-            updated_note_datas = updated_note_datas[:len(new_note_list)]
+            updated_note_datas = updated_note_datas[: len(new_note_list)]
             for i, updated_data in enumerate(updated_note_datas):
                 new_note_list[i].add_updates(updated_data)

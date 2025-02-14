@@ -17,7 +17,7 @@ class PromptConfig:
 
     @classmethod
     def create_test_instance(cls, api_key, system_prompt, user_prompt, response_keys):
-        '''For testing only'''
+        """For testing only"""
         obj = cls(None)
 
         obj.api_key = api_key
@@ -32,14 +32,23 @@ class PromptConfig:
 
     def _load_settings(self) -> None:
         self.api_key: str = self.settings.value(
-            SettingsNames.API_KEY_SETTING_NAME, defaultValue="", type=str)
+            SettingsNames.API_KEY_SETTING_NAME, defaultValue="", type=str
+        )
         self.system_prompt: str = self.settings.value(
-            SettingsNames.SYSTEM_PROMPT_SETTING_NAME, defaultValue="", type=str)
-        self.user_prompt: str = self.settings.value(SettingsNames.USER_PROMPT_SETTING_NAME, defaultValue="", type=str)
-        self.response_keys: list[str] = [key.strip() for key in self.settings.value(
-            SettingsNames.RESPONSE_KEYS_SETTING_NAME, defaultValue="", type=str).split(",")]
+            SettingsNames.SYSTEM_PROMPT_SETTING_NAME, defaultValue="", type=str
+        )
+        self.user_prompt: str = self.settings.value(
+            SettingsNames.USER_PROMPT_SETTING_NAME, defaultValue="", type=str
+        )
+        self.response_keys: list[str] = [
+            key.strip()
+            for key in self.settings.value(
+                SettingsNames.RESPONSE_KEYS_SETTING_NAME, defaultValue="", type=str
+            ).split(",")
+        ]
         self.required_fields: list[str] = self._extract_text_between_braces(
-            self.user_prompt)
+            self.user_prompt
+        )
 
     def _extract_text_between_braces(self, input_string):
         # Regular expression to match content between braces { }

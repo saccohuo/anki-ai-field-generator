@@ -35,4 +35,4 @@ def on_setup_menus(browser):
 
 
 modify_cards_ui = ModifyCardsUI()
-hooks.addHook('browser.setupMenus', on_setup_menus)
+hooks.addHook("browser.setupMenus", on_setup_menus)

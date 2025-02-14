@@ -1,5 +1,17 @@
 from aqt import QObject
-from aqt.qt import QSettings, QLabel, QDialog, QWidget, QVBoxLayout, QFont, QLineEdit, QTextEdit, QDialogButtonBox, QScrollArea, QComboBox
+from aqt.qt import (
+    QSettings,
+    QLabel,
+    QDialog,
+    QWidget,
+    QVBoxLayout,
+    QFont,
+    QLineEdit,
+    QTextEdit,
+    QDialogButtonBox,
+    QScrollArea,
+    QComboBox,
+)
 from aqt.qt import Qt
 from collections.abc import Callable
 
@@ -15,6 +27,7 @@ from .settings import SettingsNames, get_settings
 # - ideally something generic-ish that passes information through
 # - an action-custom dialog
 
+
 class ModifyCardsUI(QObject):
 
     def __init__(self):
@@ -23,11 +36,12 @@ class ModifyCardsUI(QObject):
 
     def show(self, browser):
         self.notes = [
-            browser.mw.col.getNote(note_id)
-            for note_id in browser.selectedNotes()
+            browser.mw.col.getNote(note_id) for note_id in browser.selectedNotes()
         ]
 
-        dialog = ModifyCardsDialog(self.app_settings, self.notes, self.on_submit, browser)
+        dialog = ModifyCardsDialog(
+            self.app_settings, self.notes, self.on_submit, browser
+        )
         dialog.show()
 
     def on_submit(self):
@@ -39,16 +53,14 @@ class ModifyCardsUI(QObject):
 
 class ModifyCardsDialog(QDialog):
 
-    def __init__(self, app_settings: QSettings, notes: list, on_submit: Callable, *args, **kwargs):
+    def __init__(
+        self, app_settings: QSettings, notes: list, on_submit: Callable, *args, **kwargs
+    ):
         super(ModifyCardsDialog, self).__init__(*args, **kwargs)
         self.app_settings: QSettings = app_settings
         self._on_submit: Callable = on_submit
         self._notes = notes
-        self._fields = sorted({
-            field
-            for note in notes
-            for field in note.keys()
-        })
+        self._fields = sorted({field for note in notes for field in note.keys()})
 
         self.setWindowModality(Qt.WindowModality.NonModal)
         self.setWindowTitle("Anki AI - Modify Cards")
@@ -69,44 +81,68 @@ class ModifyCardsDialog(QDialog):
         api_key_label = QLabel("OpenAI API Key:")
         api_key_label.setFont(label_font)
         self.api_key_entry = QLineEdit()
-        self.api_key_entry.setText(self.app_settings.value(
-            SettingsNames.API_KEY_SETTING_NAME, defaultValue="", type=str))
+        self.api_key_entry.setText(
+            self.app_settings.value(
+                SettingsNames.API_KEY_SETTING_NAME, defaultValue="", type=str
+            )
+        )
 
         # Multi-line text area
         system_prompt_label = QLabel("System Prompt:")
         system_prompt_label.setFont(label_font)
-        system_prompt_description = QLabel(("Enter the System Prompt that is the overall system instructions.\n"
-                                            "This is where you should give very specific instructions, examples, and do \"prompt engineering\".\n"
-                                            "For more examples, see:\n"
-                                            "https://platform.openai.com/docs/guides/prompt-engineering/strategy-write-clear-instructions"))
+        system_prompt_description = QLabel(
+            (
+                "Enter the System Prompt that is the overall system instructions.\n"
+                'This is where you should give very specific instructions, examples, and do "prompt engineering".\n'
+                "For more examples, see:\n"
+                "https://platform.openai.com/docs/guides/prompt-engineering/strategy-write-clear-instructions"
+            )
+        )
         self.system_prompt_text_edit = QTextEdit()
-        self.system_prompt_text_edit.setText(self.app_settings.value(
-            SettingsNames.SYSTEM_PROMPT_SETTING_NAME, defaultValue="", type=str))
+        self.system_prompt_text_edit.setText(
+            self.app_settings.value(
+                SettingsNames.SYSTEM_PROMPT_SETTING_NAME, defaultValue="", type=str
+            )
+        )
         self.system_prompt_text_edit.setPlaceholderText(
-            ("Example:\n"
-             "You are a helpful German teacher.  You will be provided with a series of: a German word delimited by triple quotes, "
-             "followed by a German sentence.  For each word and sentence pair, follow the below steps:\n\n"
-             "- Give a very slightly modified version of the sentence - for example, use a different subject, "
-             "verb, or object - while still using the provided German word.  Only change one or two words in the sentence.\n\n"
-             "- Translate the modified sentence into English."))
+            (
+                "Example:\n"
+                "You are a helpful German teacher.  You will be provided with a series of: a German word delimited by triple quotes, "
+                "followed by a German sentence.  For each word and sentence pair, follow the below steps:\n\n"
+                "- Give a very slightly modified version of the sentence - for example, use a different subject, "
+                "verb, or object - while still using the provided German word.  Only change one or two words in the sentence.\n\n"
+                "- Translate the modified sentence into English."
+            )
+        )
 
         # Multi-line text area
         user_prompt_label = QLabel("User Prompt:")
         user_prompt_label.setFont(label_font)
-        user_prompt_description = QLabel(("Enter the prompt that will be created and sent for each card.\n"
-                                          "Use the field name surrounded by braces to substitute in a field from the card."))
+        user_prompt_description = QLabel(
+            (
+                "Enter the prompt that will be created and sent for each card.\n"
+                "Use the field name surrounded by braces to substitute in a field from the card."
+            )
+        )
         self.user_prompt_text_edit = QTextEdit()
-        self.user_prompt_text_edit.setText(self.app_settings.value(
-            SettingsNames.USER_PROMPT_SETTING_NAME, defaultValue="", type=str))
+        self.user_prompt_text_edit.setText(
+            self.app_settings.value(
+                SettingsNames.USER_PROMPT_SETTING_NAME, defaultValue="", type=str
+            )
+        )
         self.user_prompt_text_edit.setPlaceholderText(
-            ("Example:\n"
-             '"""{german_word}"""\n\n{german_sentence}\n'))
-        available_fields_description = QLabel(f"Available fields: {', '.join(self._fields)}")
+            ("Example:\n" '"""{german_word}"""\n\n{german_sentence}\n')
+        )
+        available_fields_description = QLabel(
+            f"Available fields: {', '.join(self._fields)}"
+        )
 
         # Destination Configuration
         destination_label = QLabel("Destination Field:")
         destination_label.setFont(label_font)
-        destination_description = QLabel("Select which field the response should be written to.")
+        destination_description = QLabel(
+            "Select which field the response should be written to."
+        )
         destination_fields_dropdown = QComboBox()
         for field in self._fields:
             destination_fields_dropdown.addItem(field, field)
@@ -129,7 +165,9 @@ class ModifyCardsDialog(QDialog):
         layout.addWidget(destination_description)
         layout.addWidget(destination_fields_dropdown)
 
-        buttons = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        buttons = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
         self.buttonBox = QDialogButtonBox(buttons)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -144,10 +182,17 @@ class ModifyCardsDialog(QDialog):
         self.setLayout(main_layout)
 
     def accept(self):
-        self.app_settings.setValue(SettingsNames.API_KEY_SETTING_NAME, self.api_key_entry.text())
-        self.app_settings.setValue(SettingsNames.SYSTEM_PROMPT_SETTING_NAME,
-                                   self.system_prompt_text_edit.toPlainText())
-        self.app_settings.setValue(SettingsNames.USER_PROMPT_SETTING_NAME, self.user_prompt_text_edit.toPlainText())
+        self.app_settings.setValue(
+            SettingsNames.API_KEY_SETTING_NAME, self.api_key_entry.text()
+        )
+        self.app_settings.setValue(
+            SettingsNames.SYSTEM_PROMPT_SETTING_NAME,
+            self.system_prompt_text_edit.toPlainText(),
+        )
+        self.app_settings.setValue(
+            SettingsNames.USER_PROMPT_SETTING_NAME,
+            self.user_prompt_text_edit.toPlainText(),
+        )
         self._on_submit()
         super(ModifyCardsDialog, self).accept()
 

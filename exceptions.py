@@ -10,7 +10,7 @@ class ExternalException(Exception):
         super().__init__(message)
 
 
-def show_error_dialog(message: str, show_settings_after: bool=False):
+def show_error_dialog(message: str, show_settings_after: bool = False):
     error_dialog = aqt.qt.QErrorMessage(mw)
     error_dialog.setWindowTitle(WINDOW_NAME)
     error_dialog.showMessage(message)
