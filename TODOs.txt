@@ -1,0 +1,4 @@
+Add retry logic (if empty response or rate limited)
+Enable at least DeepSeek, preferably Claude as well
+Make UI configurable for different LLMs
+

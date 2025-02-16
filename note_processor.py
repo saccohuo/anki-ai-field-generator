@@ -3,7 +3,7 @@ from aqt.qt import QSettings
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from .exceptions import ExternalException
-from .openai_client import OpenAIClient
+from .llm_client import LLMClient
 from .prompt_config import PromptConfig
 from .settings import SettingsNames
 
@@ -21,7 +21,7 @@ class NoteProcessor(QThread):
         self,
         prompt_config: PromptConfig,
         notes: list[AnkiNote],
-        client: OpenAIClient,
+        client: LLMClient,
         settings: QSettings,  # might be cleaner to pass in the fields we need directly, not sure,
         missing_field_is_error: bool = False,
     ):
