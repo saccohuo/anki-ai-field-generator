@@ -31,7 +31,7 @@ class ModifyCardsUI(QObject):
 
     def __init__(self):
         super().__init__()
-        self.app_settings = get_settings()
+        self.app_settings = get_settings("OpenAI")
         self.notes = []
 
     def show(self, browser):
@@ -109,22 +109,9 @@ class ModifyCardsDialog(QDialog):
         left_layout = QVBoxLayout()
         left_container.setLayout(left_layout)
 
-        # API Key
-        left_layout.addWidget(self.ui_tools.create_label("OpenAI API Key:"))
-        left_layout.addWidget(
-            self.ui_tools.create_text_entry(SettingsNames.API_KEY_SETTING_NAME)
-        )
-
-        # System Prompt
-        left_layout.addWidget(self.ui_tools.create_label("System Prompt:"))
-        left_layout.addWidget(
-            self.ui_tools.create_descriptive_text(self.system_prompt_description)
-        )
-        left_layout.addWidget(
-            self.ui_tools.create_text_edit(
-                SettingsNames.SYSTEM_PROMPT_SETTING_NAME,
-                self.system_prompt_placeholder,
-            )
+        self.add_api_key(left_layout)
+        self.add_system_prompt(
+            left_layout, self.system_prompt_description, self.system_prompt_placeholder
         )
         left_layout.addStretch()
 
@@ -136,17 +123,9 @@ class ModifyCardsDialog(QDialog):
         right_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         # User Prompt
-        right_layout.addWidget(self.ui_tools.create_label("User Prompt:"))
-        right_layout.addWidget(
-            self.ui_tools.create_descriptive_text(self.user_prompt_description)
+        self.add_user_prompt(
+            right_layout, self.user_prompt_description, self.user_prompt_placeholder
         )
-        right_layout.addWidget(
-            self.ui_tools.create_text_edit(
-                SettingsNames.USER_PROMPT_SETTING_NAME,
-                self.user_prompt_placeholder,
-            )
-        )
-
         # Available Fields
         right_layout.addWidget(
             self.ui_tools.create_descriptive_text(
@@ -197,6 +176,36 @@ class ModifyCardsDialog(QDialog):
         final_layout = QVBoxLayout(self)
         final_layout.addWidget(scroll_area)
         self.setLayout(final_layout)
+
+    def add_api_key(self, layout):
+        layout.addWidget(self.ui_tools.create_label("OpenAI API Key:"))
+        layout.addWidget(
+            self.ui_tools.create_text_entry(SettingsNames.API_KEY_SETTING_NAME)
+        )
+
+    def add_system_prompt(
+        self, layout, system_prompt_description, system_prompt_placeholder
+    ):
+        layout.addWidget(self.ui_tools.create_label("System Prompt:"))
+        layout.addWidget(
+            self.ui_tools.create_descriptive_text(system_prompt_description)
+        )
+        layout.addWidget(
+            self.ui_tools.create_text_edit(
+                SettingsNames.SYSTEM_PROMPT_SETTING_NAME,
+                system_prompt_placeholder,
+            )
+        )
+
+    def add_user_prompt(self, layout, user_prompt_description, user_prompt_placeholder):
+        layout.addWidget(self.ui_tools.create_label("User Prompt:"))
+        layout.addWidget(self.ui_tools.create_descriptive_text(user_prompt_description))
+        layout.addWidget(
+            self.ui_tools.create_text_edit(
+                SettingsNames.USER_PROMPT_SETTING_NAME,
+                user_prompt_placeholder,
+            )
+        )
 
     def accept(self):
         """

@@ -13,5 +13,7 @@ class SettingsNames:
     RESPONSE_KEYS_SETTING_NAME = "response_keys"
 
 
-def get_settings():
-    return QSettings(SETTINGS_ORGANIZATION, SETTINGS_APPLICATION)
+def get_settings(group_name):
+    settings = QSettings(SETTINGS_ORGANIZATION, SETTINGS_APPLICATION)
+    settings.beginGroup(group_name)
+    return settings
