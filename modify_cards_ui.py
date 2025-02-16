@@ -9,14 +9,15 @@ from aqt.qt import (
     QVBoxLayout,
     QFont,
     QLineEdit,
+    Qt,
     QTextEdit,
     QDialogButtonBox,
     QScrollArea,
 )
-from aqt.qt import Qt
 
 from .note_processor import NoteProcessor
 from .openai_client import OpenAIClient
+from .progress_bar import ProgressDialog
 from .prompt_config import PromptConfig
 from .settings import SettingsNames, get_settings
 from .two_col_layout import DynamicForm
@@ -41,13 +42,13 @@ class ModifyCardsUI(QObject):
             browser.mw.col.get_note(note_id) for note_id in browser.selectedNotes()
         ]
 
-        dialog = ModifyCardsDialog(
+        self.dialog = ModifyCardsDialog(
             self.app_settings,
             self.notes,
             lambda: self.on_submit(browser=browser),
             browser,
         )
-        dialog.show()
+        self.dialog.show()
 
     def on_submit(self, browser):
         prompt_config = PromptConfig(self.app_settings)
@@ -55,7 +56,8 @@ class ModifyCardsUI(QObject):
         note_processor = NoteProcessor(
             prompt_config, self.notes, client, self.app_settings
         )
-        note_processor.process(missing_field_is_error=True)
+        dialog = ProgressDialog(note_processor)
+        dialog.exec()
         browser.mw.reset()
 
 
