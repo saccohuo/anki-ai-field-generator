@@ -4,7 +4,6 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 from .exceptions import ExternalException
 from .llm_client import LLMClient
-from .prompt_config import PromptConfig
 from .settings import SettingsNames
 
 
@@ -19,14 +18,12 @@ class NoteProcessor(QThread):
 
     def __init__(
         self,
-        prompt_config: PromptConfig,
         notes: list[AnkiNote],
         client: LLMClient,
         settings: QSettings,  # might be cleaner to pass in the fields we need directly, not sure,
         missing_field_is_error: bool = False,
     ):
         super().__init__()
-        self.prompt_config: PromptConfig = prompt_config
         self.notes = notes
         self.total_items = len(notes)
         self.client = client
@@ -45,7 +42,7 @@ class NoteProcessor(QThread):
         """
         for i in range(self.current_index, self.total_items):
             note = self.notes[self.current_index]
-            prompt = self.get_user_prompt(note, self.missing_field_is_error)
+            prompt = self.client.get_user_prompt(note, self.missing_field_is_error)
             self.progress_updated.emit(
                 int(((i + 1) / self.total_items) * 100),
                 f"Processing: {prompt}",
@@ -61,31 +58,3 @@ class NoteProcessor(QThread):
             self.current_index += 1
 
         self.finished.emit()
-
-    def fill_string_with_note_fields(
-        self, s: str, note: AnkiNote, missing_field_is_error=False
-    ) -> str:
-        """
-        Replaces any keys in {braces} in the string with actual values from the Note.
-        Substitutes a blank string if the Note did not have the corresponding key.
-        """
-
-        class DefaultDict(dict):
-            """
-            Replaces missing key with blank.
-            """
-
-            def __missing__(self, key):
-                if missing_field_is_error:
-                    raise RuntimeError(f"NoteID {note.id} does not have field {key}.")
-                return ""
-
-        return s.format_map(DefaultDict(dict(zip(note.keys(), note.values()))))
-
-    def get_user_prompt(self, note: AnkiNote, missing_field_is_error=False) -> str:
-        """
-        Creates the prompt by filling in fields from the Note.
-        """
-        return self.fill_string_with_note_fields(
-            self.prompt_config.user_prompt, note, missing_field_is_error
-        )

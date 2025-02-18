@@ -2,14 +2,20 @@ import json
 import requests
 
 from .exceptions import ExternalException
+from .llm_client import LLMClient
 from .response_utils import get_response_format
 from .prompt_config import PromptConfig
 
 
-class OpenAIClient:
-    def __init__(self, config: PromptConfig):
-        self.config = config
+class OpenAIClient(LLMClient):
+    def __init__(self, prompt_config: PromptConfig):
+        super(LLMClient, self).__init__()
+        self._prompt_config = prompt_config
         self.debug = False
+
+    @property
+    def prompt_config(self) -> PromptConfig:
+        return self._prompt_config
 
     def call(self, prompts: list[str]) -> list[dict]:
         if not prompts:
@@ -17,7 +23,7 @@ class OpenAIClient:
         url = "https://api.openai.com/v1/chat/completions"
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.config.api_key}",
+            "Authorization": f"Bearer {self.prompt_config.api_key}",
         }
         # This supports multiple prompts (newline-separated) if we switch back to batch processing.
         user_input = "\n\n".join(prompts)
@@ -27,10 +33,10 @@ class OpenAIClient:
         data = {
             "model": "gpt-4o-mini",
             "messages": [
-                {"role": "system", "content": self.config.system_prompt},
+                {"role": "system", "content": self.prompt_config.system_prompt},
                 {"role": "user", "content": user_input},
             ],
-            "response_format": get_response_format(self.config.response_keys),
+            "response_format": get_response_format(self.prompt_config.response_keys),
         }
 
         try:

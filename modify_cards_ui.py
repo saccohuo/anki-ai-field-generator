@@ -1,3 +1,4 @@
+from abc import ABCMeta, abstractmethod
 from collections.abc import Callable
 from aqt import QObject
 from aqt.qt import (
@@ -10,12 +11,12 @@ from aqt.qt import (
     QDialogButtonBox,
     QScrollArea,
 )
+from PyQt6 import QtCore
 
-from .openai_client import OpenAIClient
+from .llm_client import LLMClient
 from .note_processor import NoteProcessor
 from .progress_bar import ProgressDialog
-from .prompt_config import PromptConfig
-from .settings import SettingsNames, get_settings
+from .settings import SettingsNames
 from .two_col_layout import DynamicForm
 from .ui_tools import UITools
 
@@ -27,76 +28,21 @@ from .ui_tools import UITools
 # - an action-custom dialog
 
 
-class ModifyCardsUI(QObject):
-
-    def __init__(self):
-        super().__init__()
-        self.app_settings = get_settings("OpenAI")
-        self.notes = []
-
-    def show(self, browser):
-        self.notes = [
-            browser.mw.col.get_note(note_id) for note_id in browser.selectedNotes()
-        ]
-
-        self.dialog = ModifyCardsDialog(
-            self.app_settings,
-            self.notes,
-            lambda: self.on_submit(browser=browser),
-            browser,
-        )
-        self.dialog.show()
-
-    def on_submit(self, browser):
-        prompt_config = PromptConfig(self.app_settings)
-        client = OpenAIClient(prompt_config)
-        note_processor = NoteProcessor(
-            prompt_config, self.notes, client, self.app_settings
-        )
-        dialog = ProgressDialog(note_processor)
-        dialog.exec()
-        browser.mw.reset()
+class MyMeta(ABCMeta, type(QtCore.QObject)):
+    pass
 
 
-class ModifyCardsDialog(QDialog):
-
-    def __init__(
-        self, app_settings: QSettings, notes: list, on_submit: Callable, *args, **kwargs
-    ):
-        super(ModifyCardsDialog, self).__init__(*args, **kwargs)
+class ModifyCardsDialog(QDialog, metaclass=MyMeta):
+    def __init__(self, app_settings: QSettings):
+        super(ModifyCardsDialog, self).__init__()
         self.app_settings: QSettings = app_settings
-        self._on_submit: Callable = on_submit
-        self._notes = notes
-        self._card_fields = sorted({field for note in notes for field in note.keys()})
         self._width = 500
         self.ui_tools: UITools = UITools(app_settings, self._width)
 
-        self.system_prompt_description = (
-            "Enter the System Prompt that is the overall system instructions.\n"
-            'This is where you should give very specific instructions, examples, and do "prompt engineering". '
-            "For more examples, see:\n"
-            "https://platform.openai.com/docs/guides/prompt-engineering/strategy-write-clear-instructions"
-        )
-        self.system_prompt_placeholder = (
-            "Example:\n"
-            "You are a helpful German teacher.  You will be provided with a series of: a German word delimited by triple quotes, "
-            "followed by a German sentence.  For each word and sentence pair, follow the below steps:\n\n"
-            "- Give a very slightly modified version of the sentence - for example, use a different subject, "
-            "verb, or object - while still using the provided German word.  Only change one or two words in the sentence.\n\n"
-            "- Translate the modified sentence into English."
-        )
-        self.user_prompt_description = (
-            "Enter the prompt that will be created and sent for each card.\n"
-            "Use the field name surrounded by braces to substitute in a field from the card."
-        )
-        self.user_prompt_placeholder = (
-            "Example:\n" '"""{german_word}"""\n\n{german_sentence}\n'
-        )
-        self.mapping_instruction_text = """
-        For each piece of information the AI gives you, type its label from the AI and select the Anki field where you want to save it.<br><br>
-        <b>Example:</b> If you asked the AI for a German sentence and its translation, and your Anki fields are <code>de_sentence</code> and <code>en_sentence</code>, enter:
-        <pre>exampleSentence de_sentence<br>translation en_sentence</pre>
-        """
+    def show(self, notes: list, on_submit: Callable):
+        if self.layout() is not None:
+            QWidget().setLayout(self.layout())  # Clears any existing layout
+        card_fields = sorted({field for note in notes for field in note.keys()})
 
         self.setWindowModality(Qt.WindowModality.NonModal)
         self.setWindowTitle("Anki AI - Modify Cards")
@@ -129,7 +75,7 @@ class ModifyCardsDialog(QDialog):
         # Available Fields
         right_layout.addWidget(
             self.ui_tools.create_descriptive_text(
-                f"Available fields: {', '.join(self._card_fields)}"
+                f"Available fields: {', '.join(card_fields)}"
             )
         )
 
@@ -140,31 +86,29 @@ class ModifyCardsDialog(QDialog):
         right_layout.addWidget(
             self.ui_tools.create_descriptive_text(self.mapping_instruction_text)
         )
-        self.two_col_form = DynamicForm(
+        two_col_form = DynamicForm(
             self.app_settings.value(
                 SettingsNames.RESPONSE_KEYS_SETTING_NAME, type="QStringList"
             ),
             self.app_settings.value(
                 SettingsNames.DESTINATION_FIELD_SETTING_NAME, type="QStringList"
             ),
-            self._card_fields,
+            card_fields,
         )
-        right_layout.addWidget(self.two_col_form)
+        right_layout.addWidget(two_col_form)
 
         # Misc
         right_layout.addWidget(
-            self.ui_tools.create_label(
-                f"{len(self._notes)} cards selected. Modify cards?"
-            )
+            self.ui_tools.create_label(f"{len(notes)} cards selected. Modify cards?")
         )
 
         buttons = (
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        self.button_box = QDialogButtonBox(buttons)
-        self.button_box.accepted.connect(self.accept)
-        self.button_box.rejected.connect(self.reject)
-        right_layout.addWidget(self.button_box)
+        button_box = QDialogButtonBox(buttons)
+        button_box.accepted.connect(lambda: self.accept(on_submit, two_col_form))
+        button_box.rejected.connect(self.reject)
+        right_layout.addWidget(button_box)
 
         main_layout.addWidget(left_container)
         main_layout.addWidget(right_container)
@@ -176,6 +120,36 @@ class ModifyCardsDialog(QDialog):
         final_layout = QVBoxLayout(self)
         final_layout.addWidget(scroll_area)
         self.setLayout(final_layout)
+        super().show()
+
+    @property
+    @abstractmethod
+    def system_prompt_description(self):
+        """User friendly description for the system prompt"""
+
+    @property
+    @abstractmethod
+    def system_prompt_placeholder(self):
+        """Optional placeholder text for the system prompt"""
+
+    @property
+    @abstractmethod
+    def user_prompt_description(self):
+        """User friendly description for the user prompt"""
+
+    @property
+    @abstractmethod
+    def user_prompt_placeholder(self):
+        """Optional placeholder text for the user prompt"""
+
+    @property
+    def mapping_instruction_text(self):
+        """User friendly description for the JSON key to Note field mapping instructions"""
+        return """
+        For each piece of information the AI gives you, type its label from the AI and select the Anki field where you want to save it.<br><br>
+        <b>Example:</b> If you asked the AI for a German sentence and its translation, and your Anki fields are <code>de_sentence</code> and <code>en_sentence</code>, enter:
+        <pre>exampleSentence de_sentence<br>translation en_sentence</pre>
+        """
 
     def add_api_key(self, layout):
         layout.addWidget(self.ui_tools.create_label("OpenAI API Key:"))
@@ -207,16 +181,43 @@ class ModifyCardsDialog(QDialog):
             )
         )
 
-    def accept(self):
+    def accept(self, on_submit: Callable, two_col_form):
         """
         Saves settings when user accepts.
         """
         self.ui_tools.save_settings()
-        keys, fields = self.two_col_form.get_inputs()
+        keys, fields = two_col_form.get_inputs()
         self.app_settings.setValue(SettingsNames.RESPONSE_KEYS_SETTING_NAME, keys)
         self.app_settings.setValue(
             SettingsNames.DESTINATION_FIELD_SETTING_NAME,
             fields,
         )
-        self._on_submit()
+        on_submit()
         super(ModifyCardsDialog, self).accept()
+
+
+class ModifyCardsUI:
+
+    def __init__(
+        self,
+        settings: QSettings,
+        modify_cards_dialog: ModifyCardsDialog,
+        llm_client: LLMClient,
+    ):
+        self.app_settings = settings
+        self.modify_cards_dialog = modify_cards_dialog
+        self.llm_client = llm_client
+
+    def show(self, browser):
+        notes = [
+            browser.mw.col.get_note(note_id) for note_id in browser.selectedNotes()
+        ]
+        self.modify_cards_dialog.show(
+            notes, lambda: self.on_submit(browser=browser, notes=notes)
+        )
+
+    def on_submit(self, browser, notes):
+        note_processor = NoteProcessor(notes, self.llm_client, self.app_settings)
+        dialog = ProgressDialog(note_processor)
+        dialog.exec()
+        browser.mw.reset()

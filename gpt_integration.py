@@ -3,24 +3,10 @@ from aqt.qt import QAction, QMenu
 from anki import hooks
 
 from .modify_cards_ui import ModifyCardsUI
-
-
-# def on_field_filter(field_text: str, field_name: str, filter_name: str, ctx: TemplateRenderContext):
-#     note = ctx.note()
-#     if all(key in note for key in prompt_config.required_fields):
-#         try:
-#             current_note_info = future_notes.get_note_info(note)
-#         except ExternalException as e:
-#             show_error_dialog(str(e))
-#             return field_text
-
-#         if current_note_info and current_note_info.is_loaded_successfully():
-#             if filter_name in current_note_info.updates_dict:
-#                 return current_note_info.updates_dict[filter_name]
-#             else:
-#                 return field_text
-#     # Default
-#     return field_text
+from .openai_client import OpenAIClient
+from .openai_ui import OpenAIDialog
+from .prompt_config import PromptConfig
+from .settings import get_settings
 
 
 def on_setup_menus(browser):
@@ -34,5 +20,10 @@ def on_setup_menus(browser):
     menu.addAction(cps_action)
 
 
-modify_cards_ui = ModifyCardsUI()
+settings = get_settings("OpenAI")
+prompt_config = PromptConfig(settings)
+llm_client = OpenAIClient(prompt_config)
+dialog = OpenAIDialog(settings)
+
+modify_cards_ui = ModifyCardsUI(settings, dialog, llm_client)
 hooks.addHook("browser.setupMenus", on_setup_menus)
