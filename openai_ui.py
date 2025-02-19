@@ -1,7 +1,7 @@
-from .modify_cards_ui import ModifyCardsDialog
+from .user_base_dialog import UserBaseDialog
 
 
-class OpenAIDialog(ModifyCardsDialog):
+class OpenAIDialog(UserBaseDialog):
 
     @property
     def system_prompt_description(self):

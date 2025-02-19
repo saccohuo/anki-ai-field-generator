@@ -1,6 +1,5 @@
 from abc import ABCMeta, abstractmethod
 from collections.abc import Callable
-from aqt import QObject
 from aqt.qt import (
     QSettings,
     QDialog,
@@ -12,10 +11,6 @@ from aqt.qt import (
     QScrollArea,
 )
 from PyQt6 import QtCore
-
-from .llm_client import LLMClient
-from .note_processor import NoteProcessor
-from .progress_bar import ProgressDialog
 from .settings import SettingsNames
 from .two_col_layout import DynamicForm
 from .ui_tools import UITools
@@ -32,9 +27,9 @@ class MyMeta(ABCMeta, type(QtCore.QObject)):
     pass
 
 
-class ModifyCardsDialog(QDialog, metaclass=MyMeta):
+class UserBaseDialog(QDialog, metaclass=MyMeta):
     def __init__(self, app_settings: QSettings):
-        super(ModifyCardsDialog, self).__init__()
+        super(UserBaseDialog, self).__init__()
         self.app_settings: QSettings = app_settings
         self._width = 500
         self.ui_tools: UITools = UITools(app_settings, self._width)
@@ -193,31 +188,4 @@ class ModifyCardsDialog(QDialog, metaclass=MyMeta):
             fields,
         )
         on_submit()
-        super(ModifyCardsDialog, self).accept()
-
-
-class ModifyCardsUI:
-
-    def __init__(
-        self,
-        settings: QSettings,
-        modify_cards_dialog: ModifyCardsDialog,
-        llm_client: LLMClient,
-    ):
-        self.app_settings = settings
-        self.modify_cards_dialog = modify_cards_dialog
-        self.llm_client = llm_client
-
-    def show(self, browser):
-        notes = [
-            browser.mw.col.get_note(note_id) for note_id in browser.selectedNotes()
-        ]
-        self.modify_cards_dialog.show(
-            notes, lambda: self.on_submit(browser=browser, notes=notes)
-        )
-
-    def on_submit(self, browser, notes):
-        note_processor = NoteProcessor(notes, self.llm_client, self.app_settings)
-        dialog = ProgressDialog(note_processor)
-        dialog.exec()
-        browser.mw.reset()
+        super(UserBaseDialog, self).accept()
