@@ -2,13 +2,16 @@
 Factory that returns the corrent LLM Client configurations.
 """
 
+from .deepseek_client import DeepseekClient
+from .deepseek_dialog import DeepSeekDialog
 from .llm_client import LLMClient
+from .main_window import MainWindow
 from .note_processor import NoteProcessor
 from .openai_client import OpenAIClient
-from .openai_ui import OpenAIDialog
+from .openai_dialog import OpenAIDialog
 from .prompt_config import PromptConfig
 from .progress_bar import ProgressDialog
-from .settings import get_settings
+from .settings import get_settings, set_new_settings_group
 from .user_base_dialog import UserBaseDialog
 
 
@@ -17,12 +20,21 @@ class ClientFactory:
     Factory that returns the corrent LLM Client configurations.
     """
 
-    def __init__(
-        self,
-    ):
-        # TODO: make this an actual setting
-        self.client_name = "OpenAI"
-        self.app_settings = get_settings(self.client_name)
+    valid_clients = ["OpenAI", "DeepSeek"]
+
+    def __init__(self, browser):
+        self.app_settings, self.client_name = get_settings()
+        self.browser = browser
+        self.notes = [
+            browser.mw.col.get_note(note_id) for note_id in browser.selectedNotes()
+        ]
+
+    def update_client(self, client_name: str):
+        assert (
+            client_name in ClientFactory.valid_clients
+        ), f"{client_name} is not implemented as a LLM Client."
+        self.client_name = client_name
+        set_new_settings_group(self.app_settings, self.client_name)
 
     def get_client(self) -> LLMClient:
         """
@@ -33,6 +45,10 @@ class ClientFactory:
             prompt_config = PromptConfig(self.app_settings)
             llm_client = OpenAIClient(prompt_config)
             return llm_client
+        if self.client_name == "DeepSeek":
+            prompt_config = PromptConfig(self.app_settings)
+            llm_client = DeepseekClient(prompt_config)
+            return llm_client
         raise NotImplementedError(f"No LLM client implemented for {self.client_name}")
 
     def get_dialog(self) -> UserBaseDialog:
@@ -41,21 +57,22 @@ class ClientFactory:
         Client. Add an implementation for each Client you add.
         """
         if self.client_name == "OpenAI":
-            return OpenAIDialog(self.app_settings)
+            return OpenAIDialog(self.app_settings, self.notes)
+        if self.client_name == "DeepSeek":
+            return DeepSeekDialog(self.app_settings, self.notes)
         raise NotImplementedError(
             f"No user settings dialog implemented for {self.client_name}"
         )
 
-    def show(self, browser):
+    def show(self):
         """
         Displays the user settings UI.
         """
-        notes = [
-            browser.mw.col.get_note(note_id) for note_id in browser.selectedNotes()
-        ]
-        self.get_dialog().show(
-            notes, lambda: self.on_submit(browser=browser, notes=notes)
+        # self.get_dialog(self.client_name).show(notes)
+        mw = MainWindow(
+            self, lambda: self.on_submit(browser=self.browser, notes=self.notes)
         )
+        mw.show()
 
     def on_submit(self, browser, notes):
         """
@@ -63,7 +80,6 @@ class ClientFactory:
         This also refreshes the settings and the LLM client, as the user may have
         changed them.
         """
-        # TODO: refresh settings and client name, somehow
         note_processor = NoteProcessor(notes, self.get_client(), self.app_settings)
         dialog = ProgressDialog(note_processor)
         dialog.exec()

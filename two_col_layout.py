@@ -81,8 +81,4 @@ class DynamicForm(QWidget):
                         keys.append(key)
                         fields.append(field)
 
-        # For now, print the gathered data
-        print("Collected Data:")
-        print(f"Keys: {','.join(keys)}")
-        print(f"Fields: {','.join(fields)}")
         return keys, fields

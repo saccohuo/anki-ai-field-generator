@@ -8,6 +8,8 @@ from .prompt_config import PromptConfig
 
 
 class OpenAIClient(LLMClient):
+    SERVICE_NAME = "OpenAI"
+
     def __init__(self, prompt_config: PromptConfig):
         super(LLMClient, self).__init__()
         self._prompt_config = prompt_config
@@ -43,8 +45,8 @@ class OpenAIClient(LLMClient):
             response = requests.post(url, headers=headers, json=data, timeout=30)
         except requests.exceptions.ConnectionError as exc:
             raise ExternalException(
-                "ConnectionError, could not access the OpenAI service.\n"
-                "Are you sure you have an internet connection?"
+                f"ConnectionError, could not access the {OpenAIClient.SERVICE_NAME} "
+                "service.\nAre you sure you have an internet connection?"
             ) from exc
 
         try:

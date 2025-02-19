@@ -7,13 +7,19 @@ from .prompt_config import PromptConfig
 
 
 class DeepseekClient(LLMClient):
+    # TODO: this should be configurable
     MODEL = "deepseek-chat"
     URL = "https://api.deepseek.com/chat/completions"
     SERVICE_NAME = "DeepSeek"
 
-    def __init__(self, config: PromptConfig):
-        self.config = config
+    def __init__(self, prompt_config: PromptConfig):
+        super(LLMClient, self).__init__()
+        self._prompt_config = prompt_config
         self.debug = False
+
+    @property
+    def prompt_config(self) -> PromptConfig:
+        return self._prompt_config
 
     def call(self, prompts: list[str]) -> list[dict]:
         if not prompts:
@@ -21,7 +27,7 @@ class DeepseekClient(LLMClient):
         url = DeepseekClient.URL
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.config.api_key}",
+            "Authorization": f"Bearer {self.prompt_config.api_key}",
         }
         # This supports multiple prompts (newline-separated) if we switch back to batch processing.
         user_input = "\n\n".join(prompts)
@@ -31,7 +37,7 @@ class DeepseekClient(LLMClient):
         data = {
             "model": DeepseekClient.MODEL,
             "messages": [
-                {"role": "system", "content": self.config.system_prompt},
+                {"role": "system", "content": self.prompt_config.system_prompt},
                 {"role": "user", "content": user_input},
             ],
             "response_format": {"type": "json_object"},
@@ -41,8 +47,8 @@ class DeepseekClient(LLMClient):
             response = requests.post(url, headers=headers, json=data, timeout=30)
         except requests.exceptions.ConnectionError as exc:
             raise ExternalException(
-                f"ConnectionError, could not access the {DeepseekClient.SERVICE_NAME}"
-                " service.\nAre you sure you have an internet connection?"
+                f"ConnectionError, could not access the {DeepseekClient.SERVICE_NAME} "
+                "service.\nAre you sure you have an internet connection?"
             ) from exc
 
         try:
@@ -70,7 +76,9 @@ class DeepseekClient(LLMClient):
         self, response, expected_length: int, user_input: str = None
     ) -> list[dict]:
         message_content = response["choices"][0]["message"]["content"]
-        results = json.loads(message_content)["results"]
+        results = json.loads(message_content)
+        if isinstance(results, dict):
+            results = [results]
         if len(results) != expected_length:
             print(
                 (

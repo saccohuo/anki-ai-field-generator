@@ -1,13 +1,11 @@
 from abc import ABCMeta, abstractmethod
-from collections.abc import Callable
+from anki.notes import Note as AnkiNote
 from aqt.qt import (
     QSettings,
-    QDialog,
     QWidget,
     QHBoxLayout,
     QVBoxLayout,
     Qt,
-    QDialogButtonBox,
     QScrollArea,
 )
 from PyQt6 import QtCore
@@ -27,20 +25,21 @@ class MyMeta(ABCMeta, type(QtCore.QObject)):
     pass
 
 
-class UserBaseDialog(QDialog, metaclass=MyMeta):
-    def __init__(self, app_settings: QSettings):
+class UserBaseDialog(QWidget, metaclass=MyMeta):
+    def __init__(self, app_settings: QSettings, selected_notes: list[AnkiNote]):
         super(UserBaseDialog, self).__init__()
-        self.app_settings: QSettings = app_settings
         self._width = 500
+        self.app_settings: QSettings = app_settings
+        self.selected_notes = selected_notes
         self.ui_tools: UITools = UITools(app_settings, self._width)
 
-    def show(self, notes: list, on_submit: Callable):
+    def show(self):
         if self.layout() is not None:
             QWidget().setLayout(self.layout())  # Clears any existing layout
-        card_fields = sorted({field for note in notes for field in note.keys()})
+        card_fields = sorted(
+            {field for note in self.selected_notes for field in note.keys()}
+        )
 
-        self.setWindowModality(Qt.WindowModality.NonModal)
-        self.setWindowTitle("Anki AI - Modify Cards")
         self.resize(self._width * 2 + 20, 750)
         container_widget = QWidget()
         main_layout = QHBoxLayout(container_widget)
@@ -48,6 +47,7 @@ class UserBaseDialog(QDialog, metaclass=MyMeta):
         left_container = QWidget()
         left_container.setMaximumWidth(self._width)
         left_layout = QVBoxLayout()
+        left_layout.setContentsMargins(0, 0, 0, 0)
         left_container.setLayout(left_layout)
 
         self.add_api_key(left_layout)
@@ -60,6 +60,7 @@ class UserBaseDialog(QDialog, metaclass=MyMeta):
         right_container = QWidget()
         right_container.setMaximumWidth(self._width)
         right_layout = QVBoxLayout()
+        right_layout.setContentsMargins(0, 0, 0, 0)
         right_container.setLayout(right_layout)
         right_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
@@ -81,7 +82,7 @@ class UserBaseDialog(QDialog, metaclass=MyMeta):
         right_layout.addWidget(
             self.ui_tools.create_descriptive_text(self.mapping_instruction_text)
         )
-        two_col_form = DynamicForm(
+        self.two_col_form = DynamicForm(
             self.app_settings.value(
                 SettingsNames.RESPONSE_KEYS_SETTING_NAME, type="QStringList"
             ),
@@ -90,20 +91,14 @@ class UserBaseDialog(QDialog, metaclass=MyMeta):
             ),
             card_fields,
         )
-        right_layout.addWidget(two_col_form)
+        right_layout.addWidget(self.two_col_form)
 
         # Misc
         right_layout.addWidget(
-            self.ui_tools.create_label(f"{len(notes)} cards selected. Modify cards?")
+            self.ui_tools.create_label(
+                f"{len(self.selected_notes)} cards selected. Modify cards?"
+            )
         )
-
-        buttons = (
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        button_box = QDialogButtonBox(buttons)
-        button_box.accepted.connect(lambda: self.accept(on_submit, two_col_form))
-        button_box.rejected.connect(self.reject)
-        right_layout.addWidget(button_box)
 
         main_layout.addWidget(left_container)
         main_layout.addWidget(right_container)
@@ -115,7 +110,12 @@ class UserBaseDialog(QDialog, metaclass=MyMeta):
         final_layout = QVBoxLayout(self)
         final_layout.addWidget(scroll_area)
         self.setLayout(final_layout)
-        super().show()
+        return self
+
+    @property
+    @abstractmethod
+    def service_name(self):
+        """User friendly name of the service, e.g. 'OpenAI'"""
 
     @property
     @abstractmethod
@@ -147,7 +147,7 @@ class UserBaseDialog(QDialog, metaclass=MyMeta):
         """
 
     def add_api_key(self, layout):
-        layout.addWidget(self.ui_tools.create_label("OpenAI API Key:"))
+        layout.addWidget(self.ui_tools.create_label(f"{self.service_name} API Key:"))
         layout.addWidget(
             self.ui_tools.create_text_entry(SettingsNames.API_KEY_SETTING_NAME)
         )
@@ -163,6 +163,7 @@ class UserBaseDialog(QDialog, metaclass=MyMeta):
             self.ui_tools.create_text_edit(
                 SettingsNames.SYSTEM_PROMPT_SETTING_NAME,
                 system_prompt_placeholder,
+                max_height=350,
             )
         )
 
@@ -173,19 +174,18 @@ class UserBaseDialog(QDialog, metaclass=MyMeta):
             self.ui_tools.create_text_edit(
                 SettingsNames.USER_PROMPT_SETTING_NAME,
                 user_prompt_placeholder,
+                max_height=200,
             )
         )
 
-    def accept(self, on_submit: Callable, two_col_form):
+    def accept(self):
         """
         Saves settings when user accepts.
         """
         self.ui_tools.save_settings()
-        keys, fields = two_col_form.get_inputs()
+        keys, fields = self.two_col_form.get_inputs()
         self.app_settings.setValue(SettingsNames.RESPONSE_KEYS_SETTING_NAME, keys)
         self.app_settings.setValue(
             SettingsNames.DESTINATION_FIELD_SETTING_NAME,
             fields,
         )
-        on_submit()
-        super(UserBaseDialog, self).accept()

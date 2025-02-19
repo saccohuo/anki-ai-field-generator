@@ -39,9 +39,9 @@ class UITools:
         self.widgets[setting_name] = entry
         return entry
 
-    def create_text_edit(self, setting_name, placeholder="", max_height=300):
+    def create_text_edit(self, setting_name, placeholder="", max_height=200):
         text_edit = QTextEdit()
-        text_edit.setMaximumSize(self.max_width, max_height)
+        text_edit.setMinimumSize(self.max_width, max_height)
         setting_value = self.settings.value(setting_name)
         text_edit.setText(setting_value)
         text_edit.setPlaceholderText(placeholder)

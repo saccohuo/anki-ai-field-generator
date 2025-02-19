@@ -4,6 +4,10 @@ from .user_base_dialog import UserBaseDialog
 class OpenAIDialog(UserBaseDialog):
 
     @property
+    def service_name(self):
+        return "OpenAI"
+
+    @property
     def system_prompt_description(self):
         return (
             "Enter the System Prompt that is the overall system instructions.\n"

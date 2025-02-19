@@ -7,7 +7,8 @@ from .client_factory import ClientFactory
 
 def on_setup_menus(browser):
     def display_ui():
-        client_factory.show(browser)
+        client_factory = ClientFactory(browser)
+        client_factory.show()
 
     menu = QMenu("Anki AI", browser.form.menubar)
     browser.form.menubar.addMenu(menu)
@@ -16,5 +17,4 @@ def on_setup_menus(browser):
     menu.addAction(cps_action)
 
 
-client_factory = ClientFactory()
 hooks.addHook("browser.setupMenus", on_setup_menus)
