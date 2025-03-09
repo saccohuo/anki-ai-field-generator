@@ -34,6 +34,9 @@ class PromptConfig:
         self.api_key: str = self.settings.value(
             SettingsNames.API_KEY_SETTING_NAME, defaultValue="", type=str
         )
+        self.model: str = self.settings.value(
+            SettingsNames.MODEL_SETTING_NAME, defaultValue="", type=str
+        )
         self.system_prompt: str = self.settings.value(
             SettingsNames.SYSTEM_PROMPT_SETTING_NAME, defaultValue="", type=str
         )

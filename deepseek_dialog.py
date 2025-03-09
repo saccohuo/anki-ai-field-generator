@@ -8,6 +8,10 @@ class DeepSeekDialog(UserBaseDialog):
         return "DeepSeek"
 
     @property
+    def models(self):
+        return ["deepseek-chat", "deepseek-reasoner"]
+
+    @property
     def system_prompt_description(self):
         return (
             "Enter the System Prompt that is the overall system instructions.\n"

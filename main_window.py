@@ -91,4 +91,3 @@ class MainWindow(QMainWindow):
         # which the on_submit might need
         if self.current_client_widget.accept():
             on_submit()
-            self.close()

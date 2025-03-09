@@ -8,6 +8,17 @@ class OpenAIDialog(UserBaseDialog):
         return "OpenAI"
 
     @property
+    def models(self):
+        return [
+            "gpt-4o-mini",
+            "gpt-4o",
+            "gpt-4.5-preview",
+            "o3-mini",
+            "o1",
+            "chatgpt-4o-latest",
+        ]
+
+    @property
     def system_prompt_description(self):
         return (
             "Enter the System Prompt that is the overall system instructions.\n"

@@ -44,7 +44,7 @@ class NoteProcessor(QThread):
             note = self.notes[self.current_index]
             prompt = self.client.get_user_prompt(note, self.missing_field_is_error)
             self.progress_updated.emit(
-                int(((i + 1) / self.total_items) * 100),
+                int((i / self.total_items) * 100),
                 f"Processing: {prompt}",
             )
             try:
@@ -53,7 +53,7 @@ class NoteProcessor(QThread):
                 self.error.emit(str(e))
                 return
             for note_field, response_key in zip(self.note_fields, self.response_keys):
-                note[note_field] = response[0][response_key]
+                note[note_field] = response[response_key]
             note.col.update_note(note)
             self.current_index += 1
 

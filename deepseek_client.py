@@ -7,8 +7,6 @@ from .prompt_config import PromptConfig
 
 
 class DeepseekClient(LLMClient):
-    # TODO: this should be configurable
-    MODEL = "deepseek-chat"
     URL = "https://api.deepseek.com/chat/completions"
     SERVICE_NAME = "DeepSeek"
 
@@ -33,9 +31,9 @@ class DeepseekClient(LLMClient):
         user_input = "\n\n".join(prompts)
         if self.debug:
             print(f"Content String: {user_input}\n")
-            print(f"System Prompt: {self.config.system_prompt}\n")
+            print(f"System Prompt: {self.prompt_config.system_prompt}\n")
         data = {
-            "model": DeepseekClient.MODEL,
+            "model": self.prompt_config.model,
             "messages": [
                 {"role": "system", "content": self.prompt_config.system_prompt},
                 {"role": "user", "content": user_input},
@@ -63,31 +61,14 @@ class DeepseekClient(LLMClient):
                     'Received a "429 Client Error: Too Many Requests" response; you might be rate limited to 3 requests per minute.'
                 ) from exc
             raise ExternalException(
-                f"Error: {response.status_code} {response.reason}"
+                f"Error: {response.status_code} {response.reason}\n{response.text}"
             ) from exc
 
-        return self.parse_json_response(
-            response=response.json(),
-            expected_length=len(prompts),
-            user_input=user_input,
-        )
+        return self.parse_json_response(response=response.json())
 
-    def parse_json_response(
-        self, response, expected_length: int, user_input: str = None
-    ) -> list[dict]:
+    def parse_json_response(self, response) -> list[dict]:
         message_content = response["choices"][0]["message"]["content"]
         results = json.loads(message_content)
-        if isinstance(results, dict):
-            results = [results]
-        if len(results) != expected_length:
-            print(
-                (
-                    f"WARNING: Results size of {len(results)} didn't match input length of {expected_length}.\n"
-                    "This is normally the model being weird and not doing what you told it to do in the prompt.\n"
-                    f'The "content" passed was:\n{user_input}\nand the response was:\n{message_content}'
-                )
-            )
         if self.debug:
-            for i, sentence in enumerate(results):
-                print(f"Result {i}: {sentence}")
+            print(f"Results: {results}")
         return results

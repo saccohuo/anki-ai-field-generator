@@ -51,9 +51,9 @@ class ProgressDialog(QDialog):
         self.label.setText(text)
 
     def complete(self):
+        self.progress_bar.setValue(100)
         self.label.setText("Processing complete!")
-        self.accept()
-        # self.cancel_button.setText("Close")
+        self.cancel_button.setText("Close")
 
     def error(self, text):
         self.label.setText(f"<b>Error:</b> {text}")

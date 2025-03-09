@@ -31,15 +31,18 @@ class OpenAIClient(LLMClient):
         user_input = "\n\n".join(prompts)
         if self.debug:
             print(f"Content String: {user_input}\n")
-            print(f"System Prompt: {self.config.system_prompt}\n")
+            print(f"System Prompt: {self.prompt_config.system_prompt}\n")
         data = {
-            "model": "gpt-4o-mini",
+            "model": self.prompt_config.model,
             "messages": [
-                {"role": "system", "content": self.prompt_config.system_prompt},
                 {"role": "user", "content": user_input},
             ],
             "response_format": get_response_format(self.prompt_config.response_keys),
         }
+        if not self.prompt_config.model.startswith("o"):
+            data["messages"].insert(
+                0, {"role": "system", "content": self.prompt_config.system_prompt}
+            )
 
         try:
             response = requests.post(url, headers=headers, json=data, timeout=30)
@@ -61,29 +64,14 @@ class OpenAIClient(LLMClient):
                     'Received a "429 Client Error: Too Many Requests" response; you might be rate limited to 3 requests per minute.'
                 ) from exc
             raise ExternalException(
-                f"Error: {response.status_code} {response.reason}"
+                f"Error: {response.status_code} {response.reason}\n{response.text}"
             ) from exc
 
-        return self.parse_json_response(
-            response=response.json(),
-            expected_length=len(prompts),
-            user_input=user_input,
-        )
+        return self.parse_json_response(response=response.json())
 
-    def parse_json_response(
-        self, response, expected_length: int, user_input: str = None
-    ) -> list[dict]:
+    def parse_json_response(self, response) -> list[dict]:
         message_content = response["choices"][0]["message"]["content"]
-        results = json.loads(message_content)["results"]
-        if len(results) != expected_length:
-            print(
-                (
-                    f"WARNING: Results size of {len(results)} didn't match input length of {expected_length}.\n"
-                    "This is normally just ChatGPT being weird and not doing what you told it to do in the prompt.\n"
-                    f'The "content" passed to ChatGPT was:\n{user_input}\nand the response was:\n{message_content}'
-                )
-            )
+        results = json.loads(message_content)
         if self.debug:
-            for i, sentence in enumerate(results):
-                print(f"Result {i}: {sentence}")
+            print(f"Results: {results}")
         return results

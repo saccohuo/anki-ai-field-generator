@@ -1,4 +1,5 @@
 from aqt.qt import (
+    QComboBox,
     QFont,
     QLabel,
     QLineEdit,
@@ -31,6 +32,15 @@ class UITools:
         label.setWordWrap(True)
         return label
 
+    def create_dropdown(self, setting_name, items: list[str]):
+        combo_box = QComboBox()
+        combo_box.setMaximumWidth(self.max_width)
+        combo_box.addItems(items)
+        setting_value = self.settings.value(setting_name)
+        combo_box.setCurrentText(setting_value)
+        self.widgets[setting_name] = combo_box
+        return combo_box
+
     def create_text_entry(self, setting_name, placeholder=""):
         setting_value = self.settings.value(setting_name)
         entry = QLineEdit(setting_value)
@@ -49,11 +59,9 @@ class UITools:
         return text_edit
 
     def save_settings(self):
-        for setting_name, widget in self.widgets.items():
-            if isinstance(widget, QTextEdit):
-                self.settings.setValue(setting_name, widget.toPlainText())
-            elif isinstance(widget, QLineEdit):
-                self.settings.setValue(setting_name, widget.text())
+        settings_values = self.get_settings()
+        for setting_name, value in settings_values.items():
+            self.settings.setValue(setting_name, value)
 
     def get_settings(self):
         settings = {}
@@ -62,4 +70,6 @@ class UITools:
                 settings[setting_name] = widget.toPlainText()
             elif isinstance(widget, QLineEdit):
                 settings[setting_name] = widget.text()
+            elif isinstance(widget, QComboBox):
+                settings[setting_name] = widget.currentText()
         return settings

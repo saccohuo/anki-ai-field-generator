@@ -51,6 +51,7 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_container.setLayout(left_layout)
 
+        self.add_models_dropdown(left_layout)
         self.add_api_key(left_layout)
         self.add_system_prompt(
             left_layout, self.system_prompt_description, self.system_prompt_placeholder
@@ -120,6 +121,11 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
 
     @property
     @abstractmethod
+    def models(self) -> list[str]:
+        """Array of the names of the available models"""
+
+    @property
+    @abstractmethod
     def system_prompt_description(self):
         """User friendly description for the system prompt"""
 
@@ -146,6 +152,12 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
         <b>Example:</b> If you asked the AI for a German sentence and its translation, and your Anki fields are <code>de_sentence</code> and <code>en_sentence</code>, enter:
         <pre>exampleSentence de_sentence<br>translation en_sentence</pre>
         """
+
+    def add_models_dropdown(self, layout):
+        layout.addWidget(self.ui_tools.create_label("Model Name:"))
+        layout.addWidget(
+            self.ui_tools.create_dropdown(SettingsNames.MODEL_SETTING_NAME, self.models)
+        )
 
     def add_api_key(self, layout):
         layout.addWidget(self.ui_tools.create_label(f"{self.service_name} API Key:"))

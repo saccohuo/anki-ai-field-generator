@@ -1,3 +1,2 @@
 1) Add retry logic (if empty response or rate limited) - long
 2) Enable Claude - quick
-3) Make the LLM model selectable in the UI - medium

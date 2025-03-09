@@ -9,19 +9,9 @@ def get_response_format(required_response_keys: list[str]) -> dict:
             "strict": True,
             "schema": {
                 "type": "object",
-                "properties": {
-                    "results": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": keys_as_property_dict,
-                            "required": required_response_keys,
-                            "additionalProperties": False,
-                        },
-                    }
-                },
+                "properties": keys_as_property_dict,
+                "required": required_response_keys,
                 "additionalProperties": False,
-                "required": ["results"],
             },
         },
     }
