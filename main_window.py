@@ -89,6 +89,6 @@ class MainWindow(QMainWindow):
         """
         # This order is important, because the accept() saves settings
         # which the on_submit might need
-        self.current_client_widget.accept()
-        on_submit()
-        self.close()
+        if self.current_client_widget.accept():
+            on_submit()
+            self.close()

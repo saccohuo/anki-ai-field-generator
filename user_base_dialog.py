@@ -4,6 +4,7 @@ from aqt.qt import (
     QSettings,
     QWidget,
     QHBoxLayout,
+    QMessageBox,
     QVBoxLayout,
     Qt,
     QScrollArea,
@@ -178,10 +179,12 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
             )
         )
 
-    def accept(self):
+    def accept(self) -> bool:
         """
-        Saves settings when user accepts.
+        Saves settings when user accepts. Returns False if invalid.
         """
+        if not self.are_settings_valid():
+            return False
         self.ui_tools.save_settings()
         keys, fields = self.two_col_form.get_inputs()
         self.app_settings.setValue(SettingsNames.RESPONSE_KEYS_SETTING_NAME, keys)
@@ -189,3 +192,40 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
             SettingsNames.DESTINATION_FIELD_SETTING_NAME,
             fields,
         )
+        return True
+
+    def are_settings_valid(self) -> bool:
+        """
+        Returns True if all required settings are present, False otherwise.
+        Displays an error dialog if some are missing.
+        """
+        settings = self.ui_tools.get_settings()
+        if (
+            SettingsNames.API_KEY_SETTING_NAME not in settings
+            or not settings[SettingsNames.API_KEY_SETTING_NAME]
+        ):
+            show_error_message("Please enter an API key.")
+            return False
+        if (
+            SettingsNames.USER_PROMPT_SETTING_NAME not in settings
+            or not settings[SettingsNames.USER_PROMPT_SETTING_NAME]
+        ):
+            show_error_message("Please enter a prompt.")
+            return False
+
+        keys, fields = self.two_col_form.get_inputs()
+        if len(keys) == 0 or len(fields) == 0:
+            show_error_message("You must save at least one AI Output to one Field.")
+            return False
+
+        return True
+
+
+def show_error_message(message: str):
+    """Displays a popup with the message"""
+    msg_box = QMessageBox()
+    msg_box.setIcon(QMessageBox.Icon.Critical)
+    msg_box.setWindowTitle("Error")
+    msg_box.setText(message)
+    msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+    msg_box.exec()  # Display the message box

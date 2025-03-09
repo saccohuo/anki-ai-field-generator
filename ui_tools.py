@@ -54,3 +54,12 @@ class UITools:
                 self.settings.setValue(setting_name, widget.toPlainText())
             elif isinstance(widget, QLineEdit):
                 self.settings.setValue(setting_name, widget.text())
+
+    def get_settings(self):
+        settings = {}
+        for setting_name, widget in self.widgets.items():
+            if isinstance(widget, QTextEdit):
+                settings[setting_name] = widget.toPlainText()
+            elif isinstance(widget, QLineEdit):
+                settings[setting_name] = widget.text()
+        return settings
