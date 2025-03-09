@@ -1,4 +1,5 @@
 import json
+import time
 import requests
 
 from .exceptions import ExternalException
@@ -14,6 +15,8 @@ class OpenAIClient(LLMClient):
         super(LLMClient, self).__init__()
         self._prompt_config = prompt_config
         self.debug = False
+        self.next_request_time = 0
+        self.retry_after_time = 0
 
     @property
     def prompt_config(self) -> PromptConfig:
@@ -44,6 +47,8 @@ class OpenAIClient(LLMClient):
                 0, {"role": "system", "content": self.prompt_config.system_prompt}
             )
 
+        self.wait_if_needed()
+
         try:
             response = requests.post(url, headers=headers, json=data, timeout=30)
         except requests.exceptions.ConnectionError as exc:
@@ -54,20 +59,34 @@ class OpenAIClient(LLMClient):
 
         try:
             response.raise_for_status()
+            self.next_request_time = time.time() + self.retry_after_time + 0.5
         except requests.exceptions.HTTPError as exc:
             if response.status_code == 401:
                 raise ExternalException(
                     'Received an "Unauthorized" response; your API key is probably invalid.'
                 ) from exc
             if response.status_code == 429:
+                self.retry_after_time = int(response.headers.get("Retry-After", 20))
+                self.next_request_time = time.time() + self.retry_after_time + 1
                 raise ExternalException(
-                    'Received a "429 Client Error: Too Many Requests" response; you might be rate limited to 3 requests per minute.'
+                    'Received a "429 Client Error: Too Many Requests" response. '
+                    "On the lowest tier, you are rate limited to 3 requests per "
+                    "minute. We will start sending one request every "
+                    f"{self.retry_after_time} seconds."
                 ) from exc
             raise ExternalException(
                 f"Error: {response.status_code} {response.reason}\n{response.text}"
             ) from exc
 
         return self.parse_json_response(response=response.json())
+
+    def wait_if_needed(self):
+        """Wait until the global `next_request_time` allows a new request."""
+        now = time.time()
+        if now < self.next_request_time:
+            wait_time = self.next_request_time - now
+            print(f"Waiting {wait_time:.2f} seconds before the next request.")
+            time.sleep(wait_time)
 
     def parse_json_response(self, response) -> list[dict]:
         message_content = response["choices"][0]["message"]["content"]
