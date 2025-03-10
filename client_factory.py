@@ -2,6 +2,8 @@
 Factory that returns the corrent LLM Client configurations.
 """
 
+from .claude_client import ClaudeClient
+from .claude_dialog import ClaudeDialog
 from .deepseek_client import DeepseekClient
 from .deepseek_dialog import DeepSeekDialog
 from .llm_client import LLMClient
@@ -20,7 +22,7 @@ class ClientFactory:
     Factory that returns the corrent LLM Client configurations.
     """
 
-    valid_clients = ["OpenAI", "DeepSeek"]
+    valid_clients = ["Claude", "OpenAI", "DeepSeek"]
 
     def __init__(self, browser):
         self.app_settings, self.client_name = get_settings()
@@ -49,6 +51,10 @@ class ClientFactory:
             prompt_config = PromptConfig(self.app_settings)
             llm_client = DeepseekClient(prompt_config)
             return llm_client
+        if self.client_name == "Claude":
+            prompt_config = PromptConfig(self.app_settings)
+            llm_client = ClaudeClient(prompt_config)
+            return llm_client
         raise NotImplementedError(f"No LLM client implemented for {self.client_name}")
 
     def get_dialog(self) -> UserBaseDialog:
@@ -60,6 +66,8 @@ class ClientFactory:
             return OpenAIDialog(self.app_settings, self.notes)
         if self.client_name == "DeepSeek":
             return DeepSeekDialog(self.app_settings, self.notes)
+        if self.client_name == "Claude":
+            return ClaudeDialog(self.app_settings, self.notes)
         raise NotImplementedError(
             f"No user settings dialog implemented for {self.client_name}"
         )

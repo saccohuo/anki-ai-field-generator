@@ -1,30 +1,29 @@
 from .user_base_dialog import UserBaseDialog
 
 
-class OpenAIDialog(UserBaseDialog):
+class ClaudeDialog(UserBaseDialog):
 
     @property
     def service_name(self):
-        return "OpenAI"
+        return "Claude"
 
     @property
     def models(self):
         return [
-            "gpt-4o-mini",
-            "gpt-4o",
-            "gpt-4.5-preview",
-            "o3-mini",
-            "o1",
-            "chatgpt-4o-latest",
+            "claude-3-5-haiku-latest",
+            "claude-3-haiku-20240307",
+            "claude-3-7-sonnet-latest",
+            "claude-3-5-sonnet-latest",
+            "claude-3-opus-latest",
         ]
 
     @property
     def system_prompt_description(self):
         return (
-            "Enter the System Prompt that is the overall system instructions.\n"
+            'Enter the System Prompt to give Claude a "role".\n'
             'This is where you should give very specific instructions, examples, and do "prompt engineering". '
             "For more examples, see:\n"
-            "https://platform.openai.com/docs/guides/prompt-engineering/strategy-write-clear-instructions"
+            "https://docs.anthropic.com/en/prompt-library/library"
         )
 
     @property

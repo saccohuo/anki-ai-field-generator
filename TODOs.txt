@@ -1,2 +1,0 @@
-1) Add retry logic (if empty response or rate limited) - long
-2) Enable Claude - quick

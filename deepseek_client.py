@@ -19,7 +19,7 @@ class DeepseekClient(LLMClient):
     def prompt_config(self) -> PromptConfig:
         return self._prompt_config
 
-    def call(self, prompts: list[str]) -> list[dict]:
+    def call(self, prompts: list[str]) -> dict:
         if not prompts:
             raise Exception("Empty list of prompts given")
         url = DeepseekClient.URL
@@ -66,7 +66,7 @@ class DeepseekClient(LLMClient):
 
         return self.parse_json_response(response=response.json())
 
-    def parse_json_response(self, response) -> list[dict]:
+    def parse_json_response(self, response) -> dict:
         message_content = response["choices"][0]["message"]["content"]
         results = json.loads(message_content)
         if self.debug:

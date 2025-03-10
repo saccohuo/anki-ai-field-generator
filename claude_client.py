@@ -4,17 +4,17 @@ import requests
 
 from .exceptions import ExternalException
 from .llm_client import LLMClient
-from .response_utils import get_openai_response_format
+from .response_utils import get_anthropic_tool
 from .prompt_config import PromptConfig
 
 
-class OpenAIClient(LLMClient):
-    SERVICE_NAME = "OpenAI"
+class ClaudeClient(LLMClient):
+    SERVICE_NAME = "Anthropic"
 
     def __init__(self, prompt_config: PromptConfig):
         super(LLMClient, self).__init__()
         self._prompt_config = prompt_config
-        self.debug = False
+        self.debug = True
         self.next_request_time = 0
         self.retry_after_time = 0
 
@@ -25,10 +25,11 @@ class OpenAIClient(LLMClient):
     def call(self, prompts: list[str]) -> dict:
         if not prompts:
             raise Exception("Empty list of prompts given")
-        url = "https://api.openai.com/v1/chat/completions"
+        url = "https://api.anthropic.com/v1/messages"
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.prompt_config.api_key}",
+            "x-api-key": f"{self.prompt_config.api_key}",
+            "anthropic-version": "2023-06-01",
         }
         # This supports multiple prompts (newline-separated) if we switch back to batch processing.
         user_input = "\n\n".join(prompts)
@@ -37,17 +38,15 @@ class OpenAIClient(LLMClient):
             print(f"System Prompt: {self.prompt_config.system_prompt}\n")
         data = {
             "model": self.prompt_config.model,
+            "tools": get_anthropic_tool(self.prompt_config.response_keys),
+            # Name must match name set in response_utils
+            "tool_choice": {"type": "tool", "name": "response"},
             "messages": [
-                {"role": "user", "content": user_input},
+                {"role": "user", "content": [{"type": "text", "text": user_input}]},
             ],
-            "response_format": get_openai_response_format(
-                self.prompt_config.response_keys
-            ),
+            "system": self.prompt_config.system_prompt,
+            "max_tokens": 1024,
         }
-        if not self.prompt_config.model.startswith("o"):
-            data["messages"].insert(
-                0, {"role": "system", "content": self.prompt_config.system_prompt}
-            )
 
         self.wait_if_needed()
 
@@ -55,13 +54,13 @@ class OpenAIClient(LLMClient):
             response = requests.post(url, headers=headers, json=data, timeout=30)
         except requests.exceptions.ConnectionError as exc:
             raise ExternalException(
-                f"ConnectionError, could not access the {OpenAIClient.SERVICE_NAME} "
+                f"ConnectionError, could not access the {ClaudeClient.SERVICE_NAME} "
                 "service.\nAre you sure you have an internet connection?"
             ) from exc
 
         try:
             response.raise_for_status()
-            self.next_request_time = time.time() + self.retry_after_time + 0.5
+            self.next_request_time = time.time() + self.retry_after_time + 0.05
         except requests.exceptions.HTTPError as exc:
             if response.status_code == 401:
                 raise ExternalException(
@@ -69,11 +68,10 @@ class OpenAIClient(LLMClient):
                 ) from exc
             if response.status_code == 429:
                 self.retry_after_time = int(response.headers.get("Retry-After", 20))
-                self.next_request_time = time.time() + self.retry_after_time + 1
+                self.next_request_time = time.time() + self.retry_after_time + 0.05
                 raise ExternalException(
                     'Received a "429 Client Error: Too Many Requests" response. '
-                    "On the lowest tier, you are rate limited to 3 requests per "
-                    "minute. We will start sending one request every "
+                    "We will start sending one request every "
                     f"{self.retry_after_time} seconds."
                 ) from exc
             raise ExternalException(
@@ -91,8 +89,7 @@ class OpenAIClient(LLMClient):
             time.sleep(wait_time)
 
     def parse_json_response(self, response) -> dict:
-        message_content = response["choices"][0]["message"]["content"]
-        results = json.loads(message_content)
+        results = response["content"][0]["input"]
         if self.debug:
             print(f"Results: {results}")
         return results

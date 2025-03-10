@@ -1,4 +1,4 @@
-def get_response_format(required_response_keys: list[str]) -> dict:
+def get_openai_response_format(required_response_keys: list[str]) -> dict:
     keys_as_property_dict = convert_required_keys_to_property_dict(
         required_response_keys
     )
@@ -15,6 +15,23 @@ def get_response_format(required_response_keys: list[str]) -> dict:
             },
         },
     }
+
+
+def get_anthropic_tool(required_response_keys: list[str]) -> list[dict]:
+    keys_as_property_dict = convert_required_keys_to_property_dict(
+        required_response_keys
+    )
+    return [
+        {
+            "name": "response",
+            "description": "Response to the user's request using well-structured JSON.",
+            "input_schema": {
+                "type": "object",
+                "properties": keys_as_property_dict,
+                "required": required_response_keys,
+            },
+        }
+    ]
 
 
 def convert_required_keys_to_property_dict(required_respose_keys: list[str]) -> dict:

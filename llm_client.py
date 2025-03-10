@@ -17,7 +17,7 @@ class LLMClient(ABC):
         """Configuration to read prompt attributes"""
 
     @abstractmethod
-    def call(self, prompts: list[str]) -> list[dict]:
+    def call(self, prompts: list[str]) -> dict:
         """
         Accepts a list of prompts, and returns a list of responses, one per prompt.
         The responses are a list of key-value pairs.
