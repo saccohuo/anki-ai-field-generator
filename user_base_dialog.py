@@ -28,7 +28,7 @@ class MyMeta(ABCMeta, type(QtCore.QObject)):
 
 class UserBaseDialog(QWidget, metaclass=MyMeta):
     def __init__(self, app_settings: QSettings, selected_notes: list[AnkiNote]):
-        super(UserBaseDialog, self).__init__()
+        super().__init__()
         self._width = 500
         self.app_settings: QSettings = app_settings
         self.selected_notes = selected_notes

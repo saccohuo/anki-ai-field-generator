@@ -1,4 +1,3 @@
-import json
 import time
 import requests
 
@@ -31,7 +30,6 @@ class ClaudeClient(LLMClient):
             "x-api-key": f"{self.prompt_config.api_key}",
             "anthropic-version": "2023-06-01",
         }
-        # This supports multiple prompts (newline-separated) if we switch back to batch processing.
         user_input = "\n\n".join(prompts)
         if self.debug:
             print(f"Content String: {user_input}\n")
@@ -64,7 +62,8 @@ class ClaudeClient(LLMClient):
         except requests.exceptions.HTTPError as exc:
             if response.status_code == 401:
                 raise ExternalException(
-                    'Received an "Unauthorized" response; your API key is probably invalid.'
+                    'Received an "Unauthorized" response; your API key is probably '
+                    "invalid."
                 ) from exc
             if response.status_code == 429:
                 self.retry_after_time = int(response.headers.get("Retry-After", 20))
