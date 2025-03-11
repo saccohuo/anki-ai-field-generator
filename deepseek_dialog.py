@@ -25,6 +25,7 @@ class DeepSeekDialog(UserBaseDialog):
 
     @property
     def system_prompt_placeholder(self):
+
         return (
             "Example:\n"
             "You are a helpful German teacher.  You will be provided with a  German "

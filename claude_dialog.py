@@ -29,12 +29,14 @@ class ClaudeDialog(UserBaseDialog):
     @property
     def system_prompt_placeholder(self):
         return (
-            "Example:\n"
-            "You are a helpful German teacher.  You will be provided with: a German word delimited by triple quotes, "
-            "followed by a German sentence.  Follow the below steps:\n\n"
-            "- Give a very slightly modified version of the sentence - for example, use a different subject, "
-            "verb, or object - while still using the provided German word.  Only change one or two words in the sentence.\n\n"
-            "- Translate the modified sentence into English."
+            "You are an experienced German teacher who is helping me practice grammar. "
+            "You will be provided with a German word. Respond with:\n"
+            "- an 'exampleSentence' at A2 or B1 level about 10-15 words long using the "
+            "provided German word, and\n"
+            "- the 'translation' of that sentence into English\n\n"
+            "As you are helping me practice grammar, be sure that your example "
+            "sentences use a variety of different subjects, declensions, and word "
+            "order patterns at the A2 or B1 level."
         )
 
     @property
@@ -46,4 +48,4 @@ class ClaudeDialog(UserBaseDialog):
 
     @property
     def user_prompt_placeholder(self):
-        return "Example:\n" '"""{german_word}"""\n\n{german_sentence}\n'
+        return "Example:\n" "{german_word}"
