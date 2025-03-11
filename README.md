@@ -90,7 +90,7 @@ Once you spend $5, then you can make 500 calls per minute. I don't know of any w
 
 ### How much does it cost?
 
-See "Pricing" below for a more detailed breakdown.
+This Add-on is free! See "Pricing" below for a more detailed breakdown of expected costs of using the LLMs.
 
 ### What if I have questions, bug reports, or feature requests?
 
@@ -122,3 +122,30 @@ Using the example prompts shown in the UI:
 **Claude**: One flashcard uses 660 tokens, so 1 million tokens = 1500 cards = $0.80 USD
 
 So Claude is relatively more expensive, but it's the fastest. Once you are past the basic tier on OpenAI (once you spend $5), it becomes equivalently fast.
+
+## How should I use it?
+
+Well, you're only limited by the power of your imagination!
+
+I asked ChatGPT how people could use this plugin, and it gave me the following suggestions:
+
+### Language Learning & Vocabulary Expansion
+
+- Contextual Cloze Deletions: Generate sentences with a missing word (e.g., fill-in-the-blank exercises).
+- Synonyms & Antonyms: Provide a list of synonyms and antonyms for vocabulary words.
+- Collocations: Generate common phrases and word pairings to show how a word is naturally used.
+-  Etymology & Word Roots: Explain the origin of a word to deepen understanding.
+-  Idioms & Expressions: Provide idiomatic usage examples for specific words or phrases.
+
+### Grammar & Writing Practice
+
+- Sentence Transformations: Convert active to passive voice, direct to indirect speech, or rewrite using different tenses.
+- Error Correction: Analyze a sentence from the card and suggest corrections with explanations.
+- Paraphrasing Practice: Rephrase a sentence while keeping its meaning intact.
+- Question & Answer Generation: Generate comprehension questions based on a sentence or passage.
+
+### Subject-Specific Enhancements
+- Math & Science Flashcards: Generate explanations, problem solutions, or step-by-step derivations.
+- Medical & Technical Flashcards: Provide definitions with layman-friendly explanations and real-world applications.
+- Historical Context: Generate a brief historical background for a fact or event.
+- Mnemonic Creation: Suggest mnemonics to help remember facts, dates, or formulas.
