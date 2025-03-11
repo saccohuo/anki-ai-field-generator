@@ -20,7 +20,7 @@ def get_settings() -> QSettings:
     settings = QSettings(SETTINGS_ORGANIZATION, SETTINGS_APPLICATION)
     client_name = settings.value(
         SettingsNames.LLM_CLIENT_NAME,
-        defaultValue="OpenAI",
+        defaultValue="Claude",
         type=str,
     )
     settings.beginGroup(client_name)
