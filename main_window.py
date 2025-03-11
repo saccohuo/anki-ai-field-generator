@@ -20,7 +20,7 @@ class MainWindow(QMainWindow):
         # Don't need to set the below parameters as we're not saving any data
         self.ui_tools = UITools(None, None)
 
-        self.setWindowTitle("Anki AI - Modify Cards")
+        self.setWindowTitle("Anki AI - Update Your Flashcards with AI")
         screen = QApplication.primaryScreen().geometry()
         width = 1100
         height = 800

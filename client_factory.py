@@ -77,10 +77,10 @@ class ClientFactory:
         Displays the user settings UI.
         """
         # self.get_dialog(self.client_name).show(notes)
-        mw = MainWindow(
+        self.mw = MainWindow(
             self, lambda: self.on_submit(browser=self.browser, notes=self.notes)
         )
-        mw.show()
+        self.mw.show()
 
     def on_submit(self, browser, notes):
         """
@@ -89,6 +89,6 @@ class ClientFactory:
         changed them.
         """
         note_processor = NoteProcessor(notes, self.get_client(), self.app_settings)
-        dialog = ProgressDialog(note_processor)
+        dialog = ProgressDialog(note_processor, success_callback=self.mw.close)
         dialog.exec()
         browser.mw.reset()

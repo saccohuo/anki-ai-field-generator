@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from PyQt6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -10,8 +11,9 @@ from PyQt6.QtCore import QThread, Qt
 
 
 class ProgressDialog(QDialog):
-    def __init__(self, worker: QThread):
+    def __init__(self, worker: QThread, success_callback: Callable):
         super().__init__()
+        self.success_callback = success_callback
         self.setWindowTitle("Processing")
         self.setModal(True)
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
@@ -29,6 +31,9 @@ class ProgressDialog(QDialog):
         self.resume_button = QPushButton("Continue")
         self.resume_button.clicked.connect(self.resume)
         self.resume_button.hide()
+        self.close_button = QPushButton("Close")
+        self.close_button.clicked.connect(self.on_success)
+        self.close_button.hide()
 
         self.layout.addWidget(self.progress_bar)
         self.layout.addWidget(self.label)
@@ -36,6 +41,7 @@ class ProgressDialog(QDialog):
         button_layout = QHBoxLayout()
         button_layout.addWidget(self.cancel_button)
         button_layout.addWidget(self.resume_button)
+        button_layout.addWidget(self.close_button)
         self.layout.addLayout(button_layout)
         self.setLayout(self.layout)
         self.layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -53,7 +59,8 @@ class ProgressDialog(QDialog):
     def complete(self):
         self.progress_bar.setValue(100)
         self.label.setText("Processing complete!")
-        self.cancel_button.setText("Close")
+        self.cancel_button.hide()
+        self.close_button.show()
 
     def error(self, text):
         self.label.setText(f"<b>Error:</b> {text}")
@@ -67,3 +74,7 @@ class ProgressDialog(QDialog):
         if self.worker.isRunning():
             self.worker.terminate()  # Terminate the thread (not recommended for critical operations)
         self.reject()  # Close the dialog
+
+    def on_success(self):
+        self.cancel()
+        self.success_callback()

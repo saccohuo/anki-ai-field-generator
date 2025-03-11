@@ -13,7 +13,7 @@ class ClaudeClient(LLMClient):
     def __init__(self, prompt_config: PromptConfig):
         super(LLMClient, self).__init__()
         self._prompt_config = prompt_config
-        self.debug = True
+        self.debug = False
         self.next_request_time = 0
         self.retry_after_time = 0
 

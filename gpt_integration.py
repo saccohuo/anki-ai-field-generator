@@ -12,7 +12,7 @@ def on_setup_menus(browser):
 
     menu = QMenu("Anki AI", browser.form.menubar)
     browser.form.menubar.addMenu(menu)
-    cps_action = QAction("Anki AI Settings", mw)
+    cps_action = QAction("Update Your Flashcards with AI", mw)
     cps_action.triggered.connect(display_ui)
     menu.addAction(cps_action)
 
