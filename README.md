@@ -1,5 +1,7 @@
 # anki-ai-field-generator
 
+This is not a standalone script, it's a plugin for Anki which can be downloaded here: https://ankiweb.net/shared/info/643253121
+
 ## Description
 
 This plugin allows you to use Large Language Models (LLMs) to update or add information to your Anki flashcards using the power of AI.
@@ -42,7 +44,7 @@ translation     en_sentence
 
 ## How to Create an API Key:
 
-Note that for all of these you'll probably have to add a credit card with like $5 first.
+Note that for all of these you'll probably have to add a credit card with maybe $5 first.
 
 ### Claude (Anthropic):
 
@@ -97,6 +99,8 @@ Please submit them to the GitHub repo here: https://github.com/rroessler1/anki-a
 ### How can I support the creator of this plugin?
 
 Well, I'd be very grateful! You can buy me a coffee here: https://buymeacoffee.com/rroessler
+
+And please upvote it here: https://ankiweb.net/shared/info/643253121 , that helps other people discover it and encourages me to keep it maintained.
 
 ## Pricing
 
