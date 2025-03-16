@@ -21,6 +21,7 @@ This is not a standalone script, it's a plugin for Anki which can be downloaded 
 <br/>
 For all of these you'll have to add a credit card and add a few dollars of credit first.
 
+<br/>
 <b>Claude (Anthropic):</b>
 
 Sign up here: https://console.anthropic.com/dashboard
@@ -125,6 +126,7 @@ If you accidentally "expose" your API key (text it to someone by accident or wha
 <details>
 <summary><b>Which LLM should I use?</b></summary>
 <br/>
+
 **Answer quality:** they're all pretty good, and it depends more on your prompt engineering
 
 **Speed:** Claude is the fastest, as it allows 50 calls per minute, whereas OpenAI only allows 3 per minute and 200 per day (from the beginner tier).
