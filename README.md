@@ -18,7 +18,7 @@ This is not a standalone script, it's a plugin for Anki which can be downloaded 
 
 <details>
 <summary><b>1. Create an API Key:</b></summary>
-
+<br/>
 For all of these you'll have to add a credit card and add a few dollars of credit first.
 
 <b>Claude (Anthropic):</b>
@@ -44,6 +44,7 @@ Then click on "API Keys" and create a key.
 
 <details>
 <summary><b>2. Create a System Prompt:</b></summary>
+<br/>
 This is where you write specific instructions, examples, and do "prompt engineering".
 
 This is <u>also</u> where you tell the model which output to return, which you'll need in Step 4.
@@ -59,6 +60,7 @@ In the above prompt, the model will return "exampleSentence" and "translation", 
 
 <details>
 <summary><b>DeepSeek specific:</b></summary>
+
 If you use DeepSeek, you must include an example JSON response in your System Prompt. Your prompt should look like this:
 
 ```
@@ -77,6 +79,7 @@ EXAMPLE JSON OUTPUT:
 
 <details>
 <summary><b>3. Create a User Prompt:</b></summary>
+<br/>
 This is where you use Fields from your Cards by writing the field name surrounded by braces {}.
 
 Example User Prompt:
@@ -88,6 +91,7 @@ Example User Prompt:
 
 <details>
 <summary><b>4. Save the response to your Anki Cards:</b></summary>
+<br/>
 In the System Prompt, you told the LLM what information you want.
 
 In our example it's an "exampleSentence" and a "translation", but you can ask the LLM for any information and call it whatever you want.
@@ -135,6 +139,19 @@ Unfortunately when you first sign up for OpenAI you can only make 3 calls per mi
 Once you spend $5, then you can make 500 calls per minute. I don't know of any way to just automatically spend $5 to get to the next Tier.
 
 </details>
+
+<details>
+<summary><b>Can I use this to generate new Anki cards?</b></summary>
+
+Not exactly - this plugin doesn’t create new Anki cards from scratch. However, you can import a list of words or phrases into a new deck (e.g., from an Excel sheet) and then use the plugin to automatically generate additional information for each card, such as:
+
+- Definitions
+- Example sentences
+- Translations
+- Usage tips
+
+</details>
+
 <details>
 <summary><b>How much does it cost?</b></summary>
 
@@ -179,29 +196,131 @@ So Claude is relatively more expensive, but it's the fastest. Once you are past 
 
 </details>
 
-## How should I use it?
+## Example Prompts and Use Case Ideas
 
-Well, you're only limited by the power of your imagination!
+This plugin is designed to be flexible so that with a bit of creativity you could create almost anything. But here are some example use cases:
 
-I asked ChatGPT how people could use this plugin, and it gave me the following suggestions:
+<details>
+<summary><b>Generate Example Sentences:</b></summary>
 
-### Language Learning & Vocabulary Expansion
+**System Prompt:**
+```
+You are an experienced German teacher who is helping me practice grammar.  You will be provided with a German word.  Respond with:
+-an "exampleSentence" at A2 or B1 level about 10-15 words long using the provided German word, and
+-the "translation" of that sentence into English
+```
 
-- Contextual Cloze Deletions: Generate sentences with a missing word (e.g., fill-in-the-blank exercises).
-- Synonyms & Antonyms: Provide a list of synonyms and antonyms for vocabulary words.
-- Collocations: Generate common phrases and word pairings to show how a word is naturally used.
--  Etymology & Word Roots: Explain the origin of a word to deepen understanding.
--  Idioms & Expressions: Provide idiomatic usage examples for specific words or phrases.
+**User Prompt:**
+```
+{de_word}
+```
 
-### Grammar & Writing Practice
+**Output Mapping:**
+```
+exampleSentence de_sentence
+translation     en_sentence
+```
+- Change "de_sentence" and "en_sentence" in the dropdown boxes to whatever the Fields on your Cards are called.
 
-- Sentence Transformations: Convert active to passive voice, direct to indirect speech, or rewrite using different tenses.
-- Error Correction: Analyze a sentence from the card and suggest corrections with explanations.
-- Paraphrasing Practice: Rephrase a sentence while keeping its meaning intact.
-- Question & Answer Generation: Generate comprehension questions based on a sentence or passage.
+</details>
 
-### Subject-Specific Enhancements
-- Math & Science Flashcards: Generate explanations, problem solutions, or step-by-step derivations.
-- Medical & Technical Flashcards: Provide definitions with layman-friendly explanations and real-world applications.
-- Historical Context: Generate a brief historical background for a fact or event.
-- Mnemonic Creation: Suggest mnemonics to help remember facts, dates, or formulas.
+<details>
+<summary><b>Generate Cloze Deletions:</b></summary>
+
+**System Prompt:**
+```
+You are an Anki plugin that helps users create Cloze deletions. You will be provided with a sentence. Choose 1-3 key words or phrases and replace them using Anki's Cloze deletion format: {{c1::word or phrase}}. If there are multiple deletions, use c1, c2, c3, etc. Ensure that deletions are meaningful and not too easy.
+```
+
+**User Prompt:**
+```
+{sentence}
+```
+
+**Output Mapping:**
+```
+cloze_sentence  formatted_cloze_sentence
+```
+- Change "formatted_cloze_sentence" in the dropdown box to the Field where you want to store the Cloze version.
+
+</details>
+
+<details>
+<summary><b>Summarize Information:</b></summary>
+
+**System Prompt:**
+```
+You are an expert at summarizing complex information. You will be provided with a passage of text. Summarize it in 1-2 sentences while preserving the core meaning. Keep the language clear and concise.
+```
+
+**User Prompt:**
+```
+{field_text}
+```
+
+**Output Mapping:**
+```
+summary  summarized_text
+```
+- Change "summarized_text" in the dropdown box to the Field where you want to store the summary.
+</details>
+
+<details>
+<summary><b>Step-by-Step Derivations:</b></summary>
+
+**System Prompt:**
+```
+You are a math and science tutor who explains concepts with step-by-step derivations. You will be provided with a math or science problem. Break it down into logical steps, explaining each step clearly. Use LaTeX formatting for equations when necessary.
+```
+
+**User Prompt:**
+```
+{problem_statement}
+```
+
+**Output Mapping:**
+```
+derivation  step_by_step_solution
+```
+- Change "step_by_step_solution" in the dropdown box to the Field where you want to store the derivation.
+
+</details>
+
+<details>
+<summary><b>Generate a Context-Rich Explanation:</b></summary>
+
+**System Prompt:**
+```
+You are an expert language tutor helping students understand vocabulary in
+context. You will be provided with:
+- A target word or phrase
+- An example sentence containing that word or phrase
+- A definition of the word or phrase
+- (Optional) A topic or category for additional context
+
+Respond with:
+- A revised version of the example sentence that sounds more natural and
+  contextually appropriate.
+- A brief explanation of the word or phrase in simple terms.
+- A usage tip explaining when and how to use the word correctly.
+
+```
+
+**User Prompt:**
+```
+Word: {word}
+Example Sentence: {example_sentence}
+Definition: {definition}
+Category (optional): {category}
+```
+
+**Output Mapping:**
+```
+refined_sentence  example_sentence
+explanation       simple_explanation
+usage_tip         usage_guidance
+```
+- Change "example_sentence," "simple_explanation," and "usage_guidance" in the dropdown boxes to match your Anki Card Fields.
+- Note that this example would overwrite your current "example_sentence". This may or may not be desirable.
+
+</details>

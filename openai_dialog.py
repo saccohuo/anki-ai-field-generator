@@ -22,7 +22,8 @@ class OpenAIDialog(UserBaseDialog):
     def system_prompt_description(self):
         return (
             "Enter the System Prompt that is the overall system instructions.\n"
-            'This is where you should give very specific instructions, examples, and do "prompt engineering". '
+            'This is where you should give very specific instructions, examples, and do "prompt engineering".\n'
+            "This is also where you tell the model which output to return.\n\n"
             "For more examples, see:\n"
             "https://platform.openai.com/docs/guides/prompt-engineering/strategy-write-clear-instructions"
         )

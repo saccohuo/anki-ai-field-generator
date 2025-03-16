@@ -17,6 +17,7 @@ class DeepSeekDialog(UserBaseDialog):
             "Enter the System Prompt that is the overall system instructions.\n"
             "This is where you should give very specific instructions, examples, and "
             'do "prompt engineering". \n'
+            "This is also where you tell the model which output to return.\n\n"
             "The response will be in JSON key-value pairs. "
             "Include an example response in your prompt. "
             "For an example, see:\n"
@@ -28,16 +29,14 @@ class DeepSeekDialog(UserBaseDialog):
 
         return (
             "Example:\n"
-            "You are a helpful German teacher.  You will be provided with a  German "
-            "word delimited by triple quotes, followed by a German sentence.  "
-            "For each word and sentence pair, follow the below steps:\n\n"
-            "- Give a very slightly modified version of the sentence - for example, "
-            "use a different subject, verb, or object - while still using the "
-            "provided German word.  Only change one or two words in the sentence.\n\n"
-            "- Translate the modified sentence into English.\n\n"
+            "You are an experienced German teacher who is helping me practice grammar. "
+            "You will be provided with a German word. Respond with:\n"
+            "- an 'exampleSentence' at A2 or B1 level about 10-15 words long using the "
+            "provided German word, and\n"
+            "- the 'translation' of that sentence into English\n\n"
             "EXAMPLE JSON OUTPUT:\n"
             "{\n"
-            '"modifiedSentence": "Mein Bruder kommt aus den USA.",\n'
+            '"exampleSentence": "Mein Bruder kommt aus den USA.",\n'
             '"translation": "My brother is from the USA."\n'
             "}"
         )

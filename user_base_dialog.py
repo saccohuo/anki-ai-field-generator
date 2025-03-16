@@ -148,8 +148,8 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
     def mapping_instruction_text(self):
         """User friendly description for the JSON key to Note field mapping instructions"""
         return """
-        For each piece of information the AI gives you, type its label from the AI and select the Anki field where you want to save it.<br><br>
-        <b>Example:</b> If you asked the AI for a German sentence and its translation, and your Anki fields are <code>de_sentence</code> and <code>en_sentence</code>, enter:
+        For each piece of information you told the AI to give you in the System Prompt, enter it here, and select the Field on your Card where you want to save it.<br><br>
+        <b>Example:</b> If you asked the AI for a German sentence and its translation, and your Anki Fields are <code>de_sentence</code> and <code>en_sentence</code>, enter:
         <pre>exampleSentence de_sentence<br>translation en_sentence</pre>
         """
 

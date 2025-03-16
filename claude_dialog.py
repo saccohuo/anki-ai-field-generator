@@ -22,7 +22,9 @@ class ClaudeDialog(UserBaseDialog):
         return (
             'Enter the System Prompt to give Claude a "role".\n'
             "This is where you should give very specific instructions, examples, and "
-            'do "prompt engineering". For more examples, see:\n'
+            'do "prompt engineering".\n'
+            "This is also where you tell the model which output to return.\n\n"
+            "For more examples, see:\n"
             "https://docs.anthropic.com/en/prompt-library/library"
         )
 
