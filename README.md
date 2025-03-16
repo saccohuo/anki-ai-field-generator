@@ -52,7 +52,8 @@ This is <u>also</u> where you tell the model which output to return, which you'l
 Example System Prompt:
 
 ```
-You are an experienced German teacher who is helping me practice grammar.  You will be provided with a German word.  Respond with:
+You are an experienced German teacher who is helping me practice grammar.
+You will be provided with a German word.  Respond with:
 -an "exampleSentence" at A2 or B1 level about 10-15 words long using the provided German word, and
 -the "translation" of that sentence into English
 ```
@@ -113,7 +114,7 @@ In our example, the LLM returns:
 
 <details>
 <summary><b>What is an API Key?</b></summary>
-
+<br/>
 An API Key is a secret unique identifier used to authenticate and authorize a user. So basically it identifies you with your account, so you can be charged for your usage.
 
 **An API Key should never be shared with anyone.** Because then they can use your account and your saved credit.
@@ -123,7 +124,7 @@ If you accidentally "expose" your API key (text it to someone by accident or wha
 </details>
 <details>
 <summary><b>Which LLM should I use?</b></summary>
-
+<br/>
 **Answer quality:** they're all pretty good, and it depends more on your prompt engineering
 
 **Speed:** Claude is the fastest, as it allows 50 calls per minute, whereas OpenAI only allows 3 per minute and 200 per day (from the beginner tier).
@@ -133,7 +134,7 @@ If you accidentally "expose" your API key (text it to someone by accident or wha
 </details>
 <details>
 <summary><b>Why is the OpenAI model so slow / why am I getting rate-limited?</b></summary>
-
+<br/>
 Unfortunately when you first sign up for OpenAI you can only make 3 calls per minute (and 200 per day). The plugin handles this, sadly just by "pausing" for 20 seconds at a time.
 
 Once you spend $5, then you can make 500 calls per minute. I don't know of any way to just automatically spend $5 to get to the next Tier.
@@ -142,7 +143,7 @@ Once you spend $5, then you can make 500 calls per minute. I don't know of any w
 
 <details>
 <summary><b>Can I use this to generate new Anki cards?</b></summary>
-
+<br/>
 Not exactly - this plugin doesn’t create new Anki cards from scratch. However, you can import a list of words or phrases into a new deck (e.g., from an Excel sheet) and then use the plugin to automatically generate additional information for each card, such as:
 
 - Definitions
@@ -154,20 +155,20 @@ Not exactly - this plugin doesn’t create new Anki cards from scratch. However,
 
 <details>
 <summary><b>How much does it cost?</b></summary>
-
+<br/>
 This Add-on is free! See "Pricing" below for a more detailed breakdown of expected costs of using the LLMs.
 
 </details>
 <details>
 <summary><b>What if I have questions, bug reports, or feature requests?</b></summary>
-
+<br/>
 Please submit them to the GitHub repo here: https://github.com/rroessler1/anki-ai-field-generator/issues
 
 </details>
 <details>
 <summary><b>How can I support the creator of this plugin?</b></summary>
-
-Well, I'd be very grateful! You can buy me a coffee here: https://buymeacoffee.com/rroessler
+<br/>
+I'd be very grateful! You can buy me a coffee here: https://buymeacoffee.com/rroessler
 
 And please upvote it here: https://ankiweb.net/shared/info/643253121 , that helps other people discover it and encourages me to keep it maintained.
 </details>
@@ -183,7 +184,7 @@ All the companies have models are relatively inexpensive, and have the pricing i
 
 <details>
 <summary><b>Estimated Costs:</b></summary>
-
+<br/>
 Using the example prompts shown in the UI:
 
 **OpenAI**: One flashcard uses 180 tokens, so 1 million tokens = 5500 cards = $0.15 USD
@@ -205,7 +206,8 @@ This plugin is designed to be flexible so that with a bit of creativity you coul
 
 **System Prompt:**
 ```
-You are an experienced German teacher who is helping me practice grammar.  You will be provided with a German word.  Respond with:
+You are an experienced German teacher who is helping me practice grammar.
+You will be provided with a German word. Respond with:
 -an "exampleSentence" at A2 or B1 level about 10-15 words long using the provided German word, and
 -the "translation" of that sentence into English
 ```
@@ -229,7 +231,10 @@ translation     en_sentence
 
 **System Prompt:**
 ```
-You are an Anki plugin that helps users create Cloze deletions. You will be provided with a sentence. Choose 1-3 key words or phrases and replace them using Anki's Cloze deletion format: {{c1::word or phrase}}. If there are multiple deletions, use c1, c2, c3, etc. Ensure that deletions are meaningful and not too easy.
+You are an Anki plugin that helps users create Cloze deletions. You will be provided with a sentence.
+Choose 1-3 key words or phrases and replace them using Anki's Cloze deletion format: {{c1::word or phrase}}.
+If there are multiple deletions, use c1, c2, c3, etc.
+Ensure that deletions are meaningful and not too easy.
 ```
 
 **User Prompt:**
@@ -250,7 +255,10 @@ cloze_sentence  formatted_cloze_sentence
 
 **System Prompt:**
 ```
-You are an expert at summarizing complex information. You will be provided with a passage of text. Summarize it in 1-2 sentences while preserving the core meaning. Keep the language clear and concise.
+You are an expert at summarizing complex information.
+You will be provided with a passage of text.
+Summarize it in 1-2 sentences while preserving the core meaning.
+Keep the language clear and concise.
 ```
 
 **User Prompt:**
@@ -270,7 +278,10 @@ summary  summarized_text
 
 **System Prompt:**
 ```
-You are a math and science tutor who explains concepts with step-by-step derivations. You will be provided with a math or science problem. Break it down into logical steps, explaining each step clearly. Use LaTeX formatting for equations when necessary.
+You are a math and science tutor who explains concepts with step-by-step derivations.
+You will be provided with a math or science problem.
+Break it down into logical steps, explaining each step clearly.
+Use LaTeX formatting for equations when necessary.
 ```
 
 **User Prompt:**
@@ -291,8 +302,8 @@ derivation  step_by_step_solution
 
 **System Prompt:**
 ```
-You are an expert language tutor helping students understand vocabulary in
-context. You will be provided with:
+You are an expert language tutor helping students understand vocabulary in context.
+You will be provided with:
 - A target word or phrase
 - An example sentence containing that word or phrase
 - A definition of the word or phrase
