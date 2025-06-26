@@ -22,6 +22,7 @@ This is not a standalone script, it's a plugin for Anki which can be downloaded 
 For all of these you'll have to add a credit card and add a few dollars of credit first.
 
 <br/>
+
 <b>Claude (Anthropic):</b>
 
 Sign up here: https://console.anthropic.com/dashboard

@@ -17,6 +17,20 @@ def get_openai_response_format(required_response_keys: list[str]) -> dict:
     }
 
 
+def get_gemini_response_format(required_response_keys: list[str]) -> dict:
+    keys_as_property_dict = convert_required_keys_to_property_dict(
+        required_response_keys
+    )
+    return {
+        "responseMimeType": "application/json",
+        "responseSchema": {
+            "type": "object",
+            "properties": keys_as_property_dict,
+            "required": required_response_keys,
+        }
+    }
+
+
 def get_anthropic_tool(required_response_keys: list[str]) -> list[dict]:
     keys_as_property_dict = convert_required_keys_to_property_dict(
         required_response_keys

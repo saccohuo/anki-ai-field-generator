@@ -6,6 +6,8 @@ from .claude_client import ClaudeClient
 from .claude_dialog import ClaudeDialog
 from .deepseek_client import DeepseekClient
 from .deepseek_dialog import DeepSeekDialog
+from .gemini_client import GeminiClient
+from .gemini_dialog import GeminiDialog
 from .llm_client import LLMClient
 from .main_window import MainWindow
 from .note_processor import NoteProcessor
@@ -22,7 +24,7 @@ class ClientFactory:
     Factory that returns the corrent LLM Client configurations.
     """
 
-    valid_clients = ["Claude", "OpenAI", "DeepSeek"]
+    valid_clients = ["Claude", "OpenAI", "DeepSeek", "Gemini"]
 
     def __init__(self, browser):
         self.app_settings, self.client_name = get_settings()
@@ -43,17 +45,18 @@ class ClientFactory:
         Factory method that returns the LLM Client implementation.
         Add an implementation for each Client you add.
         """
+        prompt_config = PromptConfig(self.app_settings)
         if self.client_name == "OpenAI":
-            prompt_config = PromptConfig(self.app_settings)
             llm_client = OpenAIClient(prompt_config)
             return llm_client
         if self.client_name == "DeepSeek":
-            prompt_config = PromptConfig(self.app_settings)
             llm_client = DeepseekClient(prompt_config)
             return llm_client
         if self.client_name == "Claude":
-            prompt_config = PromptConfig(self.app_settings)
             llm_client = ClaudeClient(prompt_config)
+            return llm_client
+        if self.client_name == "Gemini":
+            llm_client = GeminiClient(prompt_config)
             return llm_client
         raise NotImplementedError(f"No LLM client implemented for {self.client_name}")
 
@@ -68,6 +71,8 @@ class ClientFactory:
             return DeepSeekDialog(self.app_settings, self.notes)
         if self.client_name == "Claude":
             return ClaudeDialog(self.app_settings, self.notes)
+        if self.client_name == "Gemini":
+            return GeminiDialog(self.app_settings, self.notes)
         raise NotImplementedError(
             f"No user settings dialog implemented for {self.client_name}"
         )
