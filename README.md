@@ -5,7 +5,7 @@ This is not a standalone script, it's a plugin for Anki which can be downloaded 
 ## Description
 
 - This plugin allows you to use Large Language Models (LLMs) to add information to your Anki flashcards using the power of AI.
-- Supports Claude (Anthropic), ChatGPT (OpenAI), and Deepseek models.
+- Supports Claude (Anthropic), ChatGPT (OpenAI), Gemini (Google), and Deepseek models.
 - Completely free! (You create your own API key and pay for LLM usage)
 
 ## Quickstart:
@@ -36,6 +36,12 @@ Go here: https://platform.openai.com/
 If you've never signed up for OpenAI before, click "Sign up".
 
 Follow the prompts, and be sure to create an API key and also to add a credit card with a few dollars, otherwise it won't work.
+
+<b>Gemini</b>
+
+Go here: https://aistudio.google.com/app/apikey
+
+And click the "Create API key" button.
 
 <b>DeepSeek</b>
 
@@ -130,7 +136,7 @@ If you accidentally "expose" your API key (text it to someone by accident or wha
 
 **Answer quality:** they're all pretty good, and it depends more on your prompt engineering
 
-**Speed:** Claude is the fastest, as it allows 50 calls per minute, whereas OpenAI only allows 3 per minute and 200 per day (from the beginner tier).
+**Speed:** Claude is the fastest, as it allows 50 calls per minute, whereas OpenAI only allows 3 per minute and 200 per day (from the beginner tier). Gemini has a nice free tier for the "Flash-Light Preview" model with 15 calls per minute and 1000 per day.
 
 **Cost:** OpenAI's gpt-4o-mini model is currently the cheapest.
 
@@ -180,7 +186,7 @@ And please upvote it here: https://ankiweb.net/shared/info/643253121 , that help
 
 All the companies have models are relatively inexpensive, and have the pricing information on their website. But specifically:
 
-- The cheapest models currently are Anthropic's claude-3-5-haiku, DeepSeek's deepseek-chat, and OpenAI's gpt-4o-mini.
+- The cheapest models currently are Anthropic's claude-3-5-haiku, Google's gemini-2.5-flash-light-preview, DeepSeek's deepseek-chat, and OpenAI's gpt-4o-mini.
 - More advanced models might cost quite a bit more.
 - Pricing is based on number of tokens in the input and the output. A "token" is generally a few letters.
 - I tested with the same prompt, and Claude uses 3x the number of tokens as OpenAI and Deepseek. This makes Claude more expensive.
