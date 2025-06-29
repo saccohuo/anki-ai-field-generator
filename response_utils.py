@@ -27,7 +27,7 @@ def get_gemini_response_format(required_response_keys: list[str]) -> dict:
             "type": "object",
             "properties": keys_as_property_dict,
             "required": required_response_keys,
-        }
+        },
     }
 
 

@@ -88,8 +88,8 @@ class GeminiClient(LLMClient):
                         raise ExternalException(
                             'Received a "429 Client Error: Too Many Requests" response. '
                             f"And did not succeed after {self.max_retries} retries."
-                            'The Gemini error is:'
-                            f'{response.status_code} {response.reason}\n{response.text}'
+                            "The Gemini error is:"
+                            f"{response.status_code} {response.reason}\n{response.text}"
                         ) from exc
                 if response.status_code == 400:
                     error_details = response.json().get("error", {})
@@ -119,8 +119,14 @@ class GeminiClient(LLMClient):
             raise ExternalException("Gemini API response is missing 'candidates'.")
 
         candidate = response["candidates"][0]
-        if "content" not in candidate or "parts" not in candidate["content"] or not candidate["content"]["parts"]:
-            raise ExternalException("Gemini API response candidate is missing 'content' or 'parts'.")
+        if (
+            "content" not in candidate
+            or "parts" not in candidate["content"]
+            or not candidate["content"]["parts"]
+        ):
+            raise ExternalException(
+                "Gemini API response candidate is missing 'content' or 'parts'."
+            )
 
         message_content = candidate["content"]["parts"][0].get("text")
         try:
@@ -129,4 +135,3 @@ class GeminiClient(LLMClient):
             raise ExternalException(
                 f"Failed to parse JSON from Gemini response: {exc}. Raw content: {message_content}"
             ) from exc
-    
