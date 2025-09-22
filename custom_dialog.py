@@ -25,6 +25,7 @@ class CustomDialog(UserBaseDialog):
         self.config_selector: Optional[QComboBox] = None
         self.config_name_entry = None
         self._active_config_name: Optional[str] = None
+        self._warned_example = False
 
     @property
     def service_name(self) -> str:
@@ -59,6 +60,7 @@ class CustomDialog(UserBaseDialog):
     def show(self):
         widget = super().show()
         self._refresh_configs()
+        self._maybe_warn_example()
         return widget
 
     def add_models_dropdown(self, layout):
@@ -143,6 +145,7 @@ class CustomDialog(UserBaseDialog):
             if self.config_selector.currentIndex() < 0:
                 self.config_selector.setCurrentIndex(0)
             self._apply_config(self._get_selected_config())
+        self._maybe_warn_example()
 
     def _get_selected_config(self) -> LLMConfig:
         name = self.config_selector.currentText() if self.config_selector else ""
@@ -201,9 +204,18 @@ class CustomDialog(UserBaseDialog):
     def _on_config_selected(self, index: int) -> None:
         config = self._get_selected_config()
         self._apply_config(config)
+        self._maybe_warn_example()
 
     def _open_manager(self) -> None:
         dialog = ConfigManagerDialog(self)
         dialog.exec()
         self.store.load()
         self._refresh_configs()
+        self._warned_example = False
+        self._maybe_warn_example(force=True)
+
+    def _maybe_warn_example(self, force: bool = False) -> None:
+        if self._warned_example and not force:
+            return
+        ConfigManagerDialog.prompt_save_if_example(self.store, self)
+        self._warned_example = True

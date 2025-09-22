@@ -50,7 +50,19 @@ class ConfigStore:
     """Manages reading and writing LLM config definitions to disk."""
 
     def __init__(self, config_path: Optional[Path] = None):
-        self._config_path = config_path or Path(__file__).resolve().parent / CONFIG_FILENAME
+        base_path = Path(__file__).resolve().parent
+        if config_path is not None:
+            self._config_path = config_path
+            self._using_example = False
+        else:
+            self._config_path = base_path / CONFIG_FILENAME
+            self._using_example = not self._config_path.exists()
+            if self._using_example:
+                example_path = base_path / "config.example.json"
+                if example_path.exists():
+                    self._config_path = example_path
+        self._base_path = base_path
+        self._default_path = base_path / CONFIG_FILENAME
         self._data: Dict[str, Any] = {"configs": []}
         self.load()
 
@@ -75,8 +87,29 @@ class ConfigStore:
         if not self._data["configs"]:
             self._data["configs"].append(LLMConfig(name="Default").to_dict())
             self.save()
+        self._using_example = self._config_path.name != CONFIG_FILENAME
 
     def save(self) -> None:
+        target_path = self._config_path
+        if self._config_path.name != CONFIG_FILENAME:
+            target_path = self._base_path / CONFIG_FILENAME
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        with target_path.open("w", encoding="utf-8") as fh:
+            json.dump(self._data, fh, indent=2, ensure_ascii=False)
+        self._config_path = target_path
+        self._using_example = False
+
+    @property
+    def using_example(self) -> bool:
+        return self._using_example
+
+    @property
+    def default_config_path(self) -> Path:
+        return self._default_path
+
+    def save_as(self, target_path: Path) -> None:
+        self._config_path = target_path
+        self._using_example = False
         self._config_path.parent.mkdir(parents=True, exist_ok=True)
         with self._config_path.open("w", encoding="utf-8") as fh:
             json.dump(self._data, fh, indent=2, ensure_ascii=False)

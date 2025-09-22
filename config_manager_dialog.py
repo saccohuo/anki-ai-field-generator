@@ -33,6 +33,7 @@ class ConfigManagerDialog(QDialog):
 
         self._build_ui()
         self._load_configs()
+        self.prompt_save_if_example(self.store, self)
 
     def _build_ui(self) -> None:
         main_layout = QHBoxLayout(self)
@@ -225,3 +226,31 @@ class ConfigManagerDialog(QDialog):
     @staticmethod
     def _parse_comma_list(raw_value: str) -> list[str]:
         return [value.strip() for value in raw_value.split(",") if value.strip()]
+
+    @staticmethod
+    def prompt_save_if_example(
+        store: ConfigStore, parent: Optional[QWidget] = None
+    ) -> None:
+        if not store.using_example:
+            return
+        message = (
+            "The add-on is currently using the sample configuration file "
+            "(config.example.json).\n\n"
+            "Do you want to save a copy as config.json so your changes persist?"
+        )
+        response = QMessageBox.question(
+            parent,
+            "Create config.json?",
+            message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if response != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            store.save_as(store.default_config_path)
+        except OSError as exc:
+            QMessageBox.warning(
+                parent,
+                "Unable to Save",
+                f"Could not write config.json:\n{exc}",
+            )
