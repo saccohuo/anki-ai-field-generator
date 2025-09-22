@@ -1,6 +1,10 @@
 # My own files
 setup_keys.sh
 
+# Local configuration generated at runtime
+config.json
+config.json.bak
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

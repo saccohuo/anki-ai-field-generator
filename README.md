@@ -2,6 +2,22 @@
 
 This is not a standalone script, it's a plugin for Anki which can be downloaded here: https://ankiweb.net/shared/info/643253121
 
+## Fork Notice
+
+This repository is a fork of [rroessler1/anki-ai-field-generator](https://github.com/rroessler1/anki-ai-field-generator).
+Compared with the upstream project, this fork adds:
+
+- A reusable configuration store (`config_store.py`) that centralises all LLM profiles in `config.json` and auto-creates it when missing.
+- Custom LLM support with profile switching (`custom_client.py`, `custom_dialog.py`) and a shared settings dialog accessible from multiple menus.
+- A global configuration manager (`config_manager_dialog.py`) plus menu integration in both the card browser and the Anki Tools/Add-on settings flows.
+- Contributor documentation (`AGENTS.md`) outlining repository structure, coding practices, and review expectations.
+
+## Project Roles
+
+- Original author: Ryan Roessler (rroessler1)
+- Current maintainer for this fork: Felix Huo (saccohuo)
+- Contributors: Ryan Roessler, Codex, Felix Huo
+
 ## Description
 
 - This plugin allows you to use Large Language Models (LLMs) to add information to your Anki flashcards using the power of AI.

@@ -59,6 +59,28 @@ class DynamicForm(QWidget):
         # Add the row to the main layout above the buttons
         self.layout.insertLayout(self.layout.count() - 1, row_layout)
 
+    def clear_rows(self):
+        """Remove all current key/field rows."""
+        # Leave the add button (last item) intact.
+        for index in reversed(range(self.layout.count() - 1)):
+            item = self.layout.itemAt(index)
+            if isinstance(item, QHBoxLayout):
+                while item.count():
+                    widget_item = item.takeAt(0)
+                    widget = widget_item.widget()
+                    if widget is not None:
+                        widget.deleteLater()
+                self.layout.removeItem(item)
+
+    def set_inputs(self, keys: list[str], fields: list[str]):
+        """Replace current rows with the provided key/field pairs."""
+        self.clear_rows()
+        if keys and fields and len(keys) == len(fields):
+            for key, field in zip(keys, fields):
+                self.add_row(key, field)
+        else:
+            self.add_row()
+
     def get_inputs(self):
         """
         Returns two lists: the fields and the values

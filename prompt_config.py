@@ -21,10 +21,12 @@ class PromptConfig:
         obj = cls(None)
 
         obj.api_key = api_key
+        obj.endpoint = ""
         obj.system_prompt = system_prompt
         obj.user_prompt = user_prompt
         obj.response_keys = response_keys
         obj.required_fields = obj._extract_text_between_braces(obj.user_prompt)
+        obj.config_name = ""
         return obj
 
     def refresh(self) -> None:
@@ -34,8 +36,14 @@ class PromptConfig:
         self.api_key: str = self.settings.value(
             SettingsNames.API_KEY_SETTING_NAME, defaultValue="", type=str
         )
+        self.endpoint: str = self.settings.value(
+            SettingsNames.ENDPOINT_SETTING_NAME, defaultValue="", type=str
+        )
         self.model: str = self.settings.value(
             SettingsNames.MODEL_SETTING_NAME, defaultValue="", type=str
+        )
+        self.config_name: str = self.settings.value(
+            SettingsNames.CONFIG_NAME_SETTING_NAME, defaultValue="", type=str
         )
         self.system_prompt: str = self.settings.value(
             SettingsNames.SYSTEM_PROMPT_SETTING_NAME, defaultValue="", type=str

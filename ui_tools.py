@@ -43,6 +43,8 @@ class UITools:
 
     def create_text_entry(self, setting_name, placeholder=""):
         setting_value = self.settings.value(setting_name)
+        if setting_value is None:
+            setting_value = ""
         entry = QLineEdit(setting_value)
         entry.setPlaceholderText(placeholder)
         entry.setMaximumWidth(self.max_width)
@@ -53,7 +55,7 @@ class UITools:
         text_edit = QTextEdit()
         text_edit.setMinimumSize(self.max_width, max_height)
         setting_value = self.settings.value(setting_name)
-        text_edit.setText(setting_value)
+        text_edit.setText(setting_value or "")
         text_edit.setPlaceholderText(placeholder)
         self.widgets[setting_name] = text_edit
         return text_edit

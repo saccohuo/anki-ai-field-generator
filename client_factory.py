@@ -4,6 +4,9 @@ Factory that returns the corrent LLM Client configurations.
 
 from .claude_client import ClaudeClient
 from .claude_dialog import ClaudeDialog
+from .config_store import ConfigStore
+from .custom_client import CustomLLMClient
+from .custom_dialog import CustomDialog
 from .deepseek_client import DeepseekClient
 from .deepseek_dialog import DeepSeekDialog
 from .gemini_client import GeminiClient
@@ -15,7 +18,7 @@ from .openai_client import OpenAIClient
 from .openai_dialog import OpenAIDialog
 from .prompt_config import PromptConfig
 from .progress_bar import ProgressDialog
-from .settings import get_settings, set_new_settings_group
+from .settings import SettingsNames, get_settings, set_new_settings_group
 from .user_base_dialog import UserBaseDialog
 
 
@@ -24,7 +27,7 @@ class ClientFactory:
     Factory that returns the corrent LLM Client configurations.
     """
 
-    valid_clients = ["Claude", "OpenAI", "DeepSeek", "Gemini"]
+    valid_clients = ["Claude", "OpenAI", "DeepSeek", "Gemini", "Custom"]
 
     def __init__(self, browser):
         self.app_settings, self.client_name = get_settings()
@@ -58,6 +61,48 @@ class ClientFactory:
         if self.client_name == "Gemini":
             llm_client = GeminiClient(prompt_config)
             return llm_client
+        if self.client_name == "Custom":
+            store = ConfigStore()
+            config_name = prompt_config.config_name or self.app_settings.value(
+                SettingsNames.CONFIG_NAME_SETTING_NAME,
+                defaultValue="",
+                type=str,
+            )
+            config = None
+            if config_name:
+                config = store.find(config_name)
+            if config is None:
+                configs = store.list_configs()
+                config = configs[0] if configs else None
+            if config:
+                self.app_settings.setValue(
+                    SettingsNames.CONFIG_NAME_SETTING_NAME, config.name
+                )
+                self.app_settings.setValue(
+                    SettingsNames.API_KEY_SETTING_NAME, config.api_key
+                )
+                self.app_settings.setValue(
+                    SettingsNames.MODEL_SETTING_NAME, config.model
+                )
+                self.app_settings.setValue(
+                    SettingsNames.ENDPOINT_SETTING_NAME, config.endpoint
+                )
+                self.app_settings.setValue(
+                    SettingsNames.SYSTEM_PROMPT_SETTING_NAME, config.system_prompt
+                )
+                self.app_settings.setValue(
+                    SettingsNames.USER_PROMPT_SETTING_NAME, config.user_prompt
+                )
+                self.app_settings.setValue(
+                    SettingsNames.RESPONSE_KEYS_SETTING_NAME, config.response_keys
+                )
+                self.app_settings.setValue(
+                    SettingsNames.DESTINATION_FIELD_SETTING_NAME,
+                    config.destination_fields,
+                )
+                prompt_config.refresh()
+            llm_client = CustomLLMClient(prompt_config)
+            return llm_client
         raise NotImplementedError(f"No LLM client implemented for {self.client_name}")
 
     def get_dialog(self) -> UserBaseDialog:
@@ -73,6 +118,8 @@ class ClientFactory:
             return ClaudeDialog(self.app_settings, self.notes)
         if self.client_name == "Gemini":
             return GeminiDialog(self.app_settings, self.notes)
+        if self.client_name == "Custom":
+            return CustomDialog(self.app_settings, self.notes)
         raise NotImplementedError(
             f"No user settings dialog implemented for {self.client_name}"
         )

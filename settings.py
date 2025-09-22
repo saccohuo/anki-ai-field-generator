@@ -7,8 +7,10 @@ SETTINGS_APPLICATION = "anki-gpt-plugin"
 
 class SettingsNames:
     API_KEY_SETTING_NAME = "api_key"
+    ENDPOINT_SETTING_NAME = "endpoint"
     DESTINATION_FIELD_SETTING_NAME = "destination_field"
     LLM_CLIENT_NAME = "llm_client_name"
+    CONFIG_NAME_SETTING_NAME = "config_name"
     MODEL_SETTING_NAME = "model"
     SYSTEM_PROMPT_SETTING_NAME = "system_prompt"
     USER_PROMPT_SETTING_NAME = "user_prompt"

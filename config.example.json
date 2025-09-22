@@ -1,0 +1,14 @@
+{
+  "configs": [
+    {
+      "name": "Default",
+      "endpoint": "",
+      "api_key": "",
+      "model": "",
+      "system_prompt": "",
+      "user_prompt": "",
+      "response_keys": [],
+      "destination_fields": []
+    }
+  ]
+}
