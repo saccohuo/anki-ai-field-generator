@@ -19,6 +19,7 @@ class LLMConfig:
     user_prompt: str = ""
     response_keys: List[str] = field(default_factory=list)
     destination_fields: List[str] = field(default_factory=list)
+    image_prompt_mappings: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -30,6 +31,7 @@ class LLMConfig:
             "user_prompt": self.user_prompt,
             "response_keys": self.response_keys,
             "destination_fields": self.destination_fields,
+            "image_prompt_mappings": self.image_prompt_mappings,
         }
 
     @classmethod
@@ -43,6 +45,7 @@ class LLMConfig:
             user_prompt=data.get("user_prompt", ""),
             response_keys=list(data.get("response_keys", [])),
             destination_fields=list(data.get("destination_fields", [])),
+            image_prompt_mappings=list(data.get("image_prompt_mappings", [])),
         )
 
 

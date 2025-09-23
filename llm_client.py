@@ -1,9 +1,20 @@
 """Generic interface for a LLM client."""
 
 from abc import ABC, abstractmethod
-from anki.notes import Note as AnkiNote
+from typing import TYPE_CHECKING, Any
 
-from .prompt_config import PromptConfig
+if TYPE_CHECKING:
+    from anki.notes import Note as AnkiNote
+else:
+    try:
+        from anki.notes import Note as AnkiNote
+    except ImportError:
+        AnkiNote = Any  # type: ignore
+
+try:
+    from .prompt_config import PromptConfig
+except ImportError:  # pragma: no cover
+    from prompt_config import PromptConfig
 
 
 class LLMClient(ABC):

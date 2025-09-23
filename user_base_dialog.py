@@ -11,7 +11,7 @@ from aqt.qt import (
 )
 from PyQt6 import QtCore
 from .settings import SettingsNames
-from .two_col_layout import DynamicForm
+from .two_col_layout import DynamicForm, ImageMappingForm
 from .ui_tools import UITools
 
 
@@ -26,6 +26,9 @@ class MyMeta(ABCMeta, type(QtCore.QObject)):
     pass
 
 
+IMAGE_MAPPING_SEPARATOR = "->"
+
+
 class UserBaseDialog(QWidget, metaclass=MyMeta):
     def __init__(self, app_settings: QSettings, selected_notes: list[AnkiNote]):
         super().__init__()
@@ -33,6 +36,7 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
         self.app_settings: QSettings = app_settings
         self.selected_notes = selected_notes
         self.ui_tools: UITools = UITools(app_settings, self._width)
+        self.image_mapping_form: ImageMappingForm | None = None
 
     def show(self):
         if self.layout() is not None:
@@ -94,6 +98,27 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
             card_fields,
         )
         right_layout.addWidget(self.two_col_form)
+
+        # Image Generation Mapping
+        right_layout.addWidget(
+            self.ui_tools.create_label("Nano Banana Image Generation:")
+        )
+        right_layout.addWidget(
+            self.ui_tools.create_descriptive_text(
+                "Map a prompt field to the field that should receive the generated image. \
+When the prompt field's text is present, the Gemini nano-banana model will be invoked and the resulting image will be saved into the mapped field."
+            )
+        )
+        image_mapping_strings = self.app_settings.value(
+            SettingsNames.IMAGE_MAPPING_SETTING_NAME, type="QStringList"
+        ) or []
+        pairs = [
+            tuple(part.strip() for part in mapping.split(IMAGE_MAPPING_SEPARATOR, 1))
+            for mapping in image_mapping_strings
+            if IMAGE_MAPPING_SEPARATOR in mapping
+        ]
+        self.image_mapping_form = ImageMappingForm(pairs, card_fields)
+        right_layout.addWidget(self.image_mapping_form)
 
         # Misc
         right_layout.addWidget(
@@ -203,6 +228,16 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
         self.app_settings.setValue(
             SettingsNames.DESTINATION_FIELD_SETTING_NAME,
             fields,
+        )
+        if self.image_mapping_form is not None:
+            pairs = self.image_mapping_form.get_pairs()
+            mapping_strings = [
+                f"{prompt}{IMAGE_MAPPING_SEPARATOR}{image}" for prompt, image in pairs
+            ]
+        else:
+            mapping_strings = []
+        self.app_settings.setValue(
+            SettingsNames.IMAGE_MAPPING_SETTING_NAME, mapping_strings
         )
         return True
 

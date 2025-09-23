@@ -1,6 +1,13 @@
 import re
+from typing import TYPE_CHECKING
 
-from aqt.qt import QSettings
+if TYPE_CHECKING:
+    from aqt.qt import QSettings
+else:
+    try:
+        from aqt.qt import QSettings
+    except ImportError:
+        from .settings import QSettings  # fallback stub for tests
 
 from .settings import SettingsNames
 
@@ -16,7 +23,9 @@ class PromptConfig:
             self._load_settings()
 
     @classmethod
-    def create_test_instance(cls, api_key, system_prompt, user_prompt, response_keys):
+    def create_test_instance(
+        cls, api_key, system_prompt, user_prompt, response_keys, model=""
+    ):
         """For testing only"""
         obj = cls(None)
 
@@ -27,6 +36,7 @@ class PromptConfig:
         obj.response_keys = response_keys
         obj.required_fields = obj._extract_text_between_braces(obj.user_prompt)
         obj.config_name = ""
+        obj.model = model
         return obj
 
     def refresh(self) -> None:

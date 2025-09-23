@@ -13,7 +13,11 @@ from PyQt6.QtWidgets import (
 from .config_manager_dialog import ConfigManagerDialog
 from .config_store import ConfigStore, LLMConfig
 from .settings import SettingsNames
-from .user_base_dialog import UserBaseDialog, show_error_message
+from .user_base_dialog import (
+    UserBaseDialog,
+    show_error_message,
+    IMAGE_MAPPING_SEPARATOR,
+)
 
 
 class CustomDialog(UserBaseDialog):
@@ -168,6 +172,13 @@ class CustomDialog(UserBaseDialog):
                 config.response_keys,
                 config.destination_fields,
             )
+        if hasattr(self, "image_mapping_form") and self.image_mapping_form:
+            pairs = [
+                tuple(part.strip() for part in mapping.split(IMAGE_MAPPING_SEPARATOR, 1))
+                for mapping in config.image_prompt_mappings
+                if IMAGE_MAPPING_SEPARATOR in mapping
+            ]
+            self.image_mapping_form.set_pairs(pairs)
         self.app_settings.setValue(SettingsNames.CONFIG_NAME_SETTING_NAME, config.name)
         self._active_config_name = config.name
 
@@ -185,6 +196,12 @@ class CustomDialog(UserBaseDialog):
     def _persist_current_config(self) -> None:
         settings = self.ui_tools.get_settings()
         response_keys, destination_fields = self.two_col_form.get_inputs()
+        image_pairs = []
+        if hasattr(self, "image_mapping_form") and self.image_mapping_form:
+            image_pairs = self.image_mapping_form.get_pairs()
+        image_mappings = [
+            f"{prompt}{IMAGE_MAPPING_SEPARATOR}{image}" for prompt, image in image_pairs
+        ]
         config = LLMConfig(
             name=settings.get(SettingsNames.CONFIG_NAME_SETTING_NAME, "").strip(),
             endpoint=settings.get(SettingsNames.ENDPOINT_SETTING_NAME, "").strip(),
@@ -194,6 +211,7 @@ class CustomDialog(UserBaseDialog):
             user_prompt=settings.get(SettingsNames.USER_PROMPT_SETTING_NAME, ""),
             response_keys=response_keys,
             destination_fields=destination_fields,
+            image_prompt_mappings=image_mappings,
         )
         if self._active_config_name and self._active_config_name != config.name:
             self.store.delete(self._active_config_name)

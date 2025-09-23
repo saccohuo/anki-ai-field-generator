@@ -1,4 +1,9 @@
-from aqt.qt import QSettings
+try:
+    from aqt.qt import QSettings
+except ImportError:  # pragma: no cover - fallback for tests outside Anki
+    class QSettings:  # type: ignore
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError("QSettings requires the Anki environment.")
 
 
 SETTINGS_ORGANIZATION = "github_rroessler1"
@@ -15,6 +20,7 @@ class SettingsNames:
     SYSTEM_PROMPT_SETTING_NAME = "system_prompt"
     USER_PROMPT_SETTING_NAME = "user_prompt"
     RESPONSE_KEYS_SETTING_NAME = "response_keys"
+    IMAGE_MAPPING_SETTING_NAME = "image_prompt_mappings"
 
 
 def get_settings() -> QSettings:

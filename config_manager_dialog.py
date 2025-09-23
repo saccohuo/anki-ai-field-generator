@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 )
 
 from .config_store import ConfigStore, LLMConfig
+from .user_base_dialog import IMAGE_MAPPING_SEPARATOR
 
 
 class ConfigManagerDialog(QDialog):
@@ -90,6 +91,12 @@ class ConfigManagerDialog(QDialog):
         self.destination_fields_input.setPlaceholderText("Comma separated Anki fields")
         form_layout.addRow(QLabel("Destination Fields:"), self.destination_fields_input)
 
+        self.image_mapping_input = QTextEdit()
+        self.image_mapping_input.setPlaceholderText(
+            "prompt_field -> image_field (one per line)"
+        )
+        form_layout.addRow(QLabel("Image Prompt Mappings:"), self.image_mapping_input)
+
         form_container.addWidget(form_widget)
         form_container.addStretch()
 
@@ -145,6 +152,8 @@ class ConfigManagerDialog(QDialog):
         self.destination_fields_input.setText(
             ", ".join(config.destination_fields)
         )
+        if hasattr(self, "image_mapping_input"):
+            self.image_mapping_input.setPlainText("\n".join(config.image_prompt_mappings))
 
     def _clear_form(self) -> None:
         self.name_input.clear()
@@ -155,6 +164,8 @@ class ConfigManagerDialog(QDialog):
         self.user_prompt_input.clear()
         self.response_keys_input.clear()
         self.destination_fields_input.clear()
+        if hasattr(self, "image_mapping_input"):
+            self.image_mapping_input.clear()
 
     # Button handlers --------------------------------------------------
 
@@ -199,7 +210,23 @@ class ConfigManagerDialog(QDialog):
         destination_fields = self._parse_comma_list(
             self.destination_fields_input.text()
         )
-
+        mapping_lines = []
+        if hasattr(self, "image_mapping_input"):
+            mapping_lines = [
+                line.strip()
+                for line in self.image_mapping_input.toPlainText().splitlines()
+                if line.strip()
+            ]
+        image_mappings = []
+        for line in mapping_lines:
+            if IMAGE_MAPPING_SEPARATOR in line:
+                prompt, image_field = [
+                    part.strip() for part in line.split(IMAGE_MAPPING_SEPARATOR, 1)
+                ]
+                if prompt and image_field:
+                    image_mappings.append(
+                        f"{prompt}{IMAGE_MAPPING_SEPARATOR}{image_field}"
+                    )
         config = LLMConfig(
             name=name,
             endpoint=endpoint,
@@ -209,6 +236,7 @@ class ConfigManagerDialog(QDialog):
             user_prompt=user_prompt,
             response_keys=response_keys,
             destination_fields=destination_fields,
+            image_prompt_mappings=image_mappings,
         )
         if self._current_name and self._current_name != name:
             self.store.delete(self._current_name)
