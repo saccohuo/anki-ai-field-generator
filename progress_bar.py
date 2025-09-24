@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from PyQt6.QtWidgets import (
+    QApplication,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -8,6 +9,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 from PyQt6.QtCore import QThread, Qt
+from PyQt6.QtGui import QTextDocument
 
 
 class ProgressDialog(QDialog):
@@ -31,6 +33,9 @@ class ProgressDialog(QDialog):
         self.resume_button = QPushButton("Continue")
         self.resume_button.clicked.connect(self.resume)
         self.resume_button.hide()
+        self.copy_button = QPushButton("Copy Error")
+        self.copy_button.clicked.connect(self.copy_error)
+        self.copy_button.hide()
         self.close_button = QPushButton("Close")
         self.close_button.clicked.connect(self.on_success)
         self.close_button.hide()
@@ -41,6 +46,7 @@ class ProgressDialog(QDialog):
         button_layout = QHBoxLayout()
         button_layout.addWidget(self.cancel_button)
         button_layout.addWidget(self.resume_button)
+        button_layout.addWidget(self.copy_button)
         button_layout.addWidget(self.close_button)
         self.layout.addLayout(button_layout)
         self.setLayout(self.layout)
@@ -60,15 +66,26 @@ class ProgressDialog(QDialog):
         self.progress_bar.setValue(100)
         self.label.setText("Processing complete!")
         self.cancel_button.hide()
+        self.resume_button.hide()
+        self.copy_button.hide()
         self.close_button.show()
 
     def error(self, text):
         self.label.setText(f"<b>Error:</b> {text}")
         self.resume_button.show()
+        self.copy_button.show()
+        self.cancel_button.show()
+        self.close_button.show()
 
     def resume(self):
         self.resume_button.hide()
+        self.copy_button.hide()
         self.worker.start()
+
+    def copy_error(self):
+        doc = QTextDocument()
+        doc.setHtml(self.label.text())
+        QApplication.clipboard().setText(doc.toPlainText())
 
     def cancel(self):
         if self.worker.isRunning():

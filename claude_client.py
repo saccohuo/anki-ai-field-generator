@@ -1,7 +1,7 @@
 import time
 import requests
 
-from .exceptions import ExternalException
+from .exceptions import ErrorCode, ExternalException
 from .llm_client import LLMClient
 from .response_utils import get_anthropic_tool
 from .prompt_config import PromptConfig
@@ -53,7 +53,8 @@ class ClaudeClient(LLMClient):
         except requests.exceptions.ConnectionError as exc:
             raise ExternalException(
                 f"ConnectionError, could not access the {ClaudeClient.SERVICE_NAME} "
-                "service.\nAre you sure you have an internet connection?"
+                "service.\nAre you sure you have an internet connection?",
+                code=ErrorCode.CONNECTION,
             ) from exc
 
         try:
@@ -63,7 +64,8 @@ class ClaudeClient(LLMClient):
             if response.status_code == 401:
                 raise ExternalException(
                     'Received an "Unauthorized" response; your API key is probably '
-                    "invalid."
+                    "invalid.",
+                    code=ErrorCode.UNAUTHORIZED,
                 ) from exc
             if response.status_code == 429:
                 self.retry_after_time = int(response.headers.get("Retry-After", 20))
@@ -71,10 +73,12 @@ class ClaudeClient(LLMClient):
                 raise ExternalException(
                     'Received a "429 Client Error: Too Many Requests" response. '
                     "We will start sending one request every "
-                    f"{self.retry_after_time} seconds."
+                    f"{self.retry_after_time} seconds.",
+                    code=ErrorCode.RATE_LIMIT,
                 ) from exc
             raise ExternalException(
-                f"Error: {response.status_code} {response.reason}\n{response.text}"
+                f"Error: {response.status_code} {response.reason}\n{response.text}",
+                code=ErrorCode.GENERIC,
             ) from exc
 
         return self.parse_json_response(response=response.json())

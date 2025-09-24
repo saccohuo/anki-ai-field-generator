@@ -10,12 +10,12 @@ from typing import Optional
 import requests
 
 try:
-    from .exceptions import ExternalException
+    from .exceptions import ErrorCode, ExternalException
     from .llm_client import LLMClient
     from .prompt_config import PromptConfig
     from .response_utils import get_gemini_response_format
 except ImportError:  # pragma: no cover - allow running outside package context
-    from exceptions import ExternalException
+    from exceptions import ErrorCode, ExternalException
     from llm_client import LLMClient
     from prompt_config import PromptConfig
     from response_utils import get_gemini_response_format
@@ -77,7 +77,8 @@ class GeminiClient(LLMClient):
             except requests.exceptions.ConnectionError as exc:
                 raise ExternalException(
                     f"ConnectionError, could not access the {GeminiClient.SERVICE_NAME} service."
-                    "\nAre you sure you have an internet connection?"
+                    "\nAre you sure you have an internet connection?",
+                    code=ErrorCode.CONNECTION,
                 ) from exc
             try:
                 response.raise_for_status()
@@ -86,7 +87,8 @@ class GeminiClient(LLMClient):
             except requests.exceptions.HTTPError as exc:
                 if response.status_code == 401:
                     raise ExternalException(
-                        'Received an "Unauthorized" response; your API key is probably invalid.'
+                        'Received an "Unauthorized" response; your API key is probably invalid.',
+                        code=ErrorCode.UNAUTHORIZED,
                     ) from exc
                 if response.status_code == 429:
                     retry_after_time = 4 * (2**i)
@@ -96,17 +98,20 @@ class GeminiClient(LLMClient):
                             'Received a "429 Client Error: Too Many Requests" response.'
                             f" And did not succeed after {self.max_retries} retries."
                             "The Gemini error is:"
-                            f"{response.status_code} {response.reason}\n{response.text}"
+                            f"{response.status_code} {response.reason}\n{response.text}",
+                            code=ErrorCode.RATE_LIMIT,
                         ) from exc
                 if response.status_code == 400:
                     error_details = response.json().get("error", {})
                     error_message = error_details.get("message", "Bad Request")
                     raise ExternalException(
                         f"Bad Request (400): {error_message}\n"
-                        "This might be due to invalid model name, malformed request, or unsupported features."
+                        "This might be due to invalid model name, malformed request, or unsupported features.",
+                        code=ErrorCode.BAD_REQUEST,
                     ) from exc
                 raise ExternalException(
-                    f"Error: {response.status_code} {response.reason}\n{response.text}"
+                    f"Error: {response.status_code} {response.reason}\n{response.text}",
+                    code=ErrorCode.GENERIC,
                 ) from exc
         raise ExternalException("Code is unreachable.")
 
@@ -120,10 +125,13 @@ class GeminiClient(LLMClient):
 
     def generate_image(self, prompt: str, model: Optional[str] = None) -> bytes:
         if not prompt:
-            raise ExternalException("Image prompt is empty.")
+            raise ExternalException("Image prompt is empty.", code=ErrorCode.INVALID_INPUT)
 
         if not self.prompt_config.api_key:
-            raise ExternalException("Gemini API key is required for image generation.")
+            raise ExternalException(
+                "Gemini API key is required for image generation.",
+                code=ErrorCode.MISSING_CREDENTIALS,
+            )
 
         image_model = (
             model
@@ -172,25 +180,30 @@ class GeminiClient(LLMClient):
             response.raise_for_status()
         except requests.exceptions.ConnectionError as exc:
             raise ExternalException(
-                "Could not connect to Gemini image generation service."
+                "Could not connect to Gemini image generation service.",
+                code=ErrorCode.CONNECTION,
             ) from exc
         except requests.exceptions.HTTPError as exc:
             status = response.status_code
             detail = response.text
             if status == 401:
                 message = "Gemini image generation returned Unauthorized; check your API key."
+                code = ErrorCode.UNAUTHORIZED
             elif status == 429:
                 message = "Gemini image generation hit a rate limit. Please try again later."
+                code = ErrorCode.RATE_LIMIT
             else:
                 message = f"Gemini image generation failed with {status}: {response.reason}."
-            raise ExternalException(f"{message}\n{detail}") from exc
+                code = ErrorCode.BAD_REQUEST if 400 <= status < 500 else ErrorCode.GENERIC
+            raise ExternalException(f"{message}\n{detail}", code=code) from exc
 
         payload = response.json()
         try:
             parts = payload["candidates"][0]["content"].get("parts", [])
         except (KeyError, IndexError) as exc:
             raise ExternalException(
-                "Gemini image generation response did not include image data."
+                "Gemini image generation response did not include image data.",
+                code=ErrorCode.IMAGE_MISSING_DATA,
             ) from exc
 
         encoded = None
@@ -202,20 +215,27 @@ class GeminiClient(LLMClient):
 
         if not encoded:
             raise ExternalException(
-                "Gemini image generation response did not include inline image data."
+                "Gemini image generation response did not include inline image data.",
+                code=ErrorCode.IMAGE_MISSING_DATA,
             )
 
         try:
             return base64.b64decode(encoded)
         except (base64.binascii.Error, ValueError) as exc:
-            raise ExternalException("Failed to decode Gemini image data.") from exc
+            raise ExternalException(
+                "Failed to decode Gemini image data.",
+                code=ErrorCode.IMAGE_DECODE,
+            ) from exc
 
     def parse_json_response(self, response) -> dict:
         if self.debug:
             print(f"Full response: {json.dumps(response, indent=2)}")
 
         if not response or "candidates" not in response or not response["candidates"]:
-            raise ExternalException("Gemini API response is missing 'candidates'.")
+            raise ExternalException(
+                "Gemini API response is missing 'candidates'.",
+                code=ErrorCode.BAD_REQUEST,
+            )
 
         candidate = response["candidates"][0]
         if (

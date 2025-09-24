@@ -1,7 +1,7 @@
 import json
 import requests
 
-from .exceptions import ExternalException
+from .exceptions import ErrorCode, ExternalException
 from .llm_client import LLMClient
 from .prompt_config import PromptConfig
 
@@ -46,7 +46,8 @@ class DeepseekClient(LLMClient):
         except requests.exceptions.ConnectionError as exc:
             raise ExternalException(
                 f"ConnectionError, could not access the {DeepseekClient.SERVICE_NAME} "
-                "service.\nAre you sure you have an internet connection?"
+                "service.\nAre you sure you have an internet connection?",
+                code=ErrorCode.CONNECTION,
             ) from exc
 
         try:
@@ -54,14 +55,17 @@ class DeepseekClient(LLMClient):
         except requests.exceptions.HTTPError as exc:
             if response.status_code == 401:
                 raise ExternalException(
-                    'Received an "Unauthorized" response; your API key is probably invalid.'
+                    'Received an "Unauthorized" response; your API key is probably invalid.',
+                    code=ErrorCode.UNAUTHORIZED,
                 ) from exc
             if response.status_code == 429:
                 raise ExternalException(
-                    'Received a "429 Client Error: Too Many Requests" response; you might be rate limited to 3 requests per minute.'
+                    'Received a "429 Client Error: Too Many Requests" response; you might be rate limited to 3 requests per minute.',
+                    code=ErrorCode.RATE_LIMIT,
                 ) from exc
             raise ExternalException(
-                f"Error: {response.status_code} {response.reason}\n{response.text}"
+                f"Error: {response.status_code} {response.reason}\n{response.text}",
+                code=ErrorCode.GENERIC,
             ) from exc
 
         return self.parse_json_response(response=response.json())
