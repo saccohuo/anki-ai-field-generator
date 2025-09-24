@@ -21,6 +21,9 @@ class SettingsNames:
     USER_PROMPT_SETTING_NAME = "user_prompt"
     RESPONSE_KEYS_SETTING_NAME = "response_keys"
     IMAGE_MAPPING_SETTING_NAME = "image_prompt_mappings"
+    IMAGE_API_KEY_SETTING_NAME = "image_api_key"
+    IMAGE_ENDPOINT_SETTING_NAME = "image_endpoint"
+    IMAGE_MODEL_SETTING_NAME = "image_model"
 
 
 def get_settings() -> QSettings:

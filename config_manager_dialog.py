@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 )
 
 from .config_store import ConfigStore, LLMConfig
+from .gemini_client import GeminiClient
 from .user_base_dialog import IMAGE_MAPPING_SEPARATOR
 
 
@@ -97,6 +98,23 @@ class ConfigManagerDialog(QDialog):
         )
         form_layout.addRow(QLabel("Image Prompt Mappings:"), self.image_mapping_input)
 
+        self.image_api_key_input = QLineEdit()
+        self.image_api_key_input.setPlaceholderText("Override image API key")
+        form_layout.addRow(QLabel("Image API Key:"), self.image_api_key_input)
+
+        default_endpoint = "https://generativelanguage.googleapis.com/v1beta/models"
+        self.image_endpoint_input = QLineEdit()
+        self.image_endpoint_input.setPlaceholderText(
+            f"Custom image endpoint (default {default_endpoint})"
+        )
+        form_layout.addRow(QLabel("Image Endpoint:"), self.image_endpoint_input)
+
+        self.image_model_input = QLineEdit()
+        self.image_model_input.setPlaceholderText(
+            f"Image model name (default {GeminiClient.IMAGE_MODEL})"
+        )
+        form_layout.addRow(QLabel("Image Model:"), self.image_model_input)
+
         form_container.addWidget(form_widget)
         form_container.addStretch()
 
@@ -154,6 +172,12 @@ class ConfigManagerDialog(QDialog):
         )
         if hasattr(self, "image_mapping_input"):
             self.image_mapping_input.setPlainText("\n".join(config.image_prompt_mappings))
+        if hasattr(self, "image_api_key_input"):
+            self.image_api_key_input.setText(config.image_api_key)
+        if hasattr(self, "image_endpoint_input"):
+            self.image_endpoint_input.setText(config.image_endpoint)
+        if hasattr(self, "image_model_input"):
+            self.image_model_input.setText(config.image_model)
 
     def _clear_form(self) -> None:
         self.name_input.clear()
@@ -166,6 +190,12 @@ class ConfigManagerDialog(QDialog):
         self.destination_fields_input.clear()
         if hasattr(self, "image_mapping_input"):
             self.image_mapping_input.clear()
+        if hasattr(self, "image_api_key_input"):
+            self.image_api_key_input.clear()
+        if hasattr(self, "image_endpoint_input"):
+            self.image_endpoint_input.clear()
+        if hasattr(self, "image_model_input"):
+            self.image_model_input.clear()
 
     # Button handlers --------------------------------------------------
 
@@ -237,6 +267,9 @@ class ConfigManagerDialog(QDialog):
             response_keys=response_keys,
             destination_fields=destination_fields,
             image_prompt_mappings=image_mappings,
+            image_api_key=(self.image_api_key_input.text().strip() if hasattr(self, "image_api_key_input") else ""),
+            image_endpoint=(self.image_endpoint_input.text().strip() if hasattr(self, "image_endpoint_input") else ""),
+            image_model=(self.image_model_input.text().strip() if hasattr(self, "image_model_input") else ""),
         )
         if self._current_name and self._current_name != name:
             self.store.delete(self._current_name)

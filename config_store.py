@@ -20,6 +20,9 @@ class LLMConfig:
     response_keys: List[str] = field(default_factory=list)
     destination_fields: List[str] = field(default_factory=list)
     image_prompt_mappings: List[str] = field(default_factory=list)
+    image_api_key: str = ""
+    image_endpoint: str = ""
+    image_model: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -32,6 +35,9 @@ class LLMConfig:
             "response_keys": self.response_keys,
             "destination_fields": self.destination_fields,
             "image_prompt_mappings": self.image_prompt_mappings,
+            "image_api_key": self.image_api_key,
+            "image_endpoint": self.image_endpoint,
+            "image_model": self.image_model,
         }
 
     @classmethod
@@ -46,6 +52,9 @@ class LLMConfig:
             response_keys=list(data.get("response_keys", [])),
             destination_fields=list(data.get("destination_fields", [])),
             image_prompt_mappings=list(data.get("image_prompt_mappings", [])),
+            image_api_key=data.get("image_api_key", ""),
+            image_endpoint=data.get("image_endpoint", ""),
+            image_model=data.get("image_model", ""),
         )
 
 

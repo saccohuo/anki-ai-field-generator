@@ -167,6 +167,9 @@ class CustomDialog(UserBaseDialog):
         self._set_setting(SettingsNames.API_KEY_SETTING_NAME, config.api_key)
         self._set_setting(SettingsNames.SYSTEM_PROMPT_SETTING_NAME, config.system_prompt)
         self._set_setting(SettingsNames.USER_PROMPT_SETTING_NAME, config.user_prompt)
+        self._set_setting(SettingsNames.IMAGE_API_KEY_SETTING_NAME, config.image_api_key)
+        self._set_setting(SettingsNames.IMAGE_ENDPOINT_SETTING_NAME, config.image_endpoint)
+        self._set_setting(SettingsNames.IMAGE_MODEL_SETTING_NAME, config.image_model)
         if hasattr(self, "two_col_form") and self.two_col_form:
             self.two_col_form.set_inputs(
                 config.response_keys,
@@ -212,6 +215,9 @@ class CustomDialog(UserBaseDialog):
             response_keys=response_keys,
             destination_fields=destination_fields,
             image_prompt_mappings=image_mappings,
+            image_api_key=settings.get(SettingsNames.IMAGE_API_KEY_SETTING_NAME, "").strip(),
+            image_endpoint=settings.get(SettingsNames.IMAGE_ENDPOINT_SETTING_NAME, "").strip(),
+            image_model=settings.get(SettingsNames.IMAGE_MODEL_SETTING_NAME, "").strip(),
         )
         if self._active_config_name and self._active_config_name != config.name:
             self.store.delete(self._active_config_name)

@@ -13,6 +13,7 @@ from PyQt6 import QtCore
 from .settings import SettingsNames
 from .two_col_layout import DynamicForm, ImageMappingForm
 from .ui_tools import UITools
+from .gemini_client import GeminiClient
 
 
 # I think I should have:
@@ -101,12 +102,11 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
 
         # Image Generation Mapping
         right_layout.addWidget(
-            self.ui_tools.create_label("Nano Banana Image Generation:")
+            self.ui_tools.create_label("Image Generation Mapping:")
         )
         right_layout.addWidget(
             self.ui_tools.create_descriptive_text(
-                "Map a prompt field to the field that should receive the generated image. \
-When the prompt field's text is present, the Gemini nano-banana model will be invoked and the resulting image will be saved into the mapped field."
+                "Map a prompt field to the field that should receive the generated image. When the prompt field contains text, the configured image model will be invoked and the resulting image will be saved into the mapped field."
             )
         )
         image_mapping_strings = self.app_settings.value(
@@ -119,6 +119,29 @@ When the prompt field's text is present, the Gemini nano-banana model will be in
         ]
         self.image_mapping_form = ImageMappingForm(pairs, card_fields)
         right_layout.addWidget(self.image_mapping_form)
+
+        right_layout.addWidget(
+            self.ui_tools.create_label("Image Generation (optional):")
+        )
+        image_key_entry = self.ui_tools.create_text_entry(
+            SettingsNames.IMAGE_API_KEY_SETTING_NAME,
+            "Override Gemini API key for image generation"
+        )
+        right_layout.addWidget(image_key_entry)
+        self._image_api_key_entry = image_key_entry
+        default_endpoint = "https://generativelanguage.googleapis.com/v1beta/models"
+        image_endpoint_entry = self.ui_tools.create_text_entry(
+            SettingsNames.IMAGE_ENDPOINT_SETTING_NAME,
+            f"Custom image endpoint (default {default_endpoint})"
+        )
+        right_layout.addWidget(image_endpoint_entry)
+        image_model_entry = self.ui_tools.create_text_entry(
+            SettingsNames.IMAGE_MODEL_SETTING_NAME,
+            f"Image model name (default {GeminiClient.IMAGE_MODEL})"
+        )
+        if not image_model_entry.text().strip():
+            image_model_entry.setText(GeminiClient.IMAGE_MODEL)
+        right_layout.addWidget(image_model_entry)
 
         # Misc
         right_layout.addWidget(
@@ -264,6 +287,19 @@ When the prompt field's text is present, the Gemini nano-banana model will be in
         if len(keys) == 0 or len(fields) == 0:
             show_error_message("You must save at least one AI Output to one Field.")
             return False
+
+        has_image_mapping = bool(
+            self.image_mapping_form and self.image_mapping_form.get_pairs()
+        )
+        if has_image_mapping:
+            api_key = ""
+            if self._image_api_key_entry is not None:
+                api_key = self._image_api_key_entry.text().strip()
+            if not api_key:
+                show_error_message(
+                    "Enter the image generation API key before running the plugin."
+                )
+                return False
 
         return True
 

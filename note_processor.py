@@ -74,6 +74,28 @@ class NoteProcessor(QThread):
                 return
             for note_field, response_key in zip(self.note_fields, self.response_keys):
                 note[note_field] = response[response_key]
+
+            needs_image = bool(
+                self.image_field_mappings
+                and any(
+                    prompt_field in note and str(note[prompt_field]).strip()
+                    for prompt_field, _ in self.image_field_mappings
+                )
+            )
+
+            per_card = 100 / self.total_items if self.total_items else 100
+            base_progress = (i / self.total_items) * 100 if self.total_items else 0
+
+            if needs_image:
+                self.progress_updated.emit(
+                    int(base_progress + per_card / 2), "Generating image..."
+                )
+            else:
+                self.progress_updated.emit(
+                    min(100, int(base_progress + per_card)),
+                    f"Completed {i + 1}/{self.total_items}",
+                )
+
             try:
                 self._apply_image_generation(note)
             except ExternalException as exc:
@@ -82,8 +104,16 @@ class NoteProcessor(QThread):
             except Exception as exc:  # pragma: no cover - unexpected errors
                 self.error.emit(f"Image generation failed: {exc}")
                 return
+            if needs_image:
+                self.progress_updated.emit(
+                    min(100, int(base_progress + per_card)),
+                    f"Completed {i + 1}/{self.total_items}",
+                )
             note.col.update_note(note)
             self.current_index += 1
+
+        if self.total_items == 1:
+            self.progress_updated.emit(100, "Completed")
 
         self.finished.emit()
 
@@ -91,13 +121,14 @@ class NoteProcessor(QThread):
         if not self.image_field_mappings:
             return
         image_client = self._get_image_client()
+        configured_model = getattr(image_client.prompt_config, "model", "") or None
         for prompt_field, image_field in self.image_field_mappings:
             if prompt_field not in note or image_field not in note:
                 continue
             prompt_value = str(note[prompt_field]).strip()
             if not prompt_value:
                 continue
-            image_bytes = image_client.generate_image(prompt_value)
+            image_bytes = image_client.generate_image(prompt_value, model=configured_model)
             if not image_bytes:
                 continue
             filename = self._write_image_to_media(note, image_bytes, image_field)
@@ -123,26 +154,38 @@ class NoteProcessor(QThread):
         if self._gemini_image_client is not None:
             return self._gemini_image_client
         api_key = self._load_gemini_api_key()
+        endpoint = (
+            self.settings.value(
+                SettingsNames.IMAGE_ENDPOINT_SETTING_NAME, defaultValue="", type=str
+            )
+            or ""
+        )
+        image_model = (
+            self.settings.value(
+                SettingsNames.IMAGE_MODEL_SETTING_NAME, defaultValue="", type=str
+            )
+            or GeminiClient.IMAGE_MODEL
+        )
         config = PromptConfig.create_test_instance(
             api_key=api_key,
             system_prompt="",
             user_prompt="",
             response_keys=[],
-            model=GeminiClient.IMAGE_MODEL,
+            model=image_model,
+            endpoint=endpoint,
         )
         self._gemini_image_client = GeminiClient(config)
         return self._gemini_image_client
 
     def _load_gemini_api_key(self) -> str:
-        key_path = Path(__file__).resolve().parent / "tests" / "gemini_api"
-        try:
-            api_key = key_path.read_text(encoding="utf-8").strip()
-        except FileNotFoundError as exc:
-            raise ExternalException(
-                f"Gemini API key file not found at {key_path}."
-            ) from exc
+        api_key = (
+            self.settings.value(
+                SettingsNames.IMAGE_API_KEY_SETTING_NAME, defaultValue="", type=str
+            )
+            or ""
+        )
         if not api_key:
             raise ExternalException(
-                "Gemini API key file is empty; cannot generate images."
+                "Set the image generation API key before generating images."
             )
         return api_key

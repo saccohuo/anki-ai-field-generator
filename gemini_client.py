@@ -131,10 +131,15 @@ class GeminiClient(LLMClient):
             or self.IMAGE_MODEL
         )
 
-        url = (
-            "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{image_model}:generateContent"
-        )
+        base_endpoint = (getattr(self.prompt_config, "endpoint", "") or "").strip()
+        if base_endpoint:
+            base_endpoint = base_endpoint.rstrip("/")
+            url = f"{base_endpoint}/{image_model}:generateContent"
+        else:
+            url = (
+                "https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{image_model}:generateContent"
+            )
         headers = {"Content-Type": "application/json"}
         params = {"key": self.prompt_config.api_key}
         body = {

@@ -24,7 +24,7 @@ class PromptConfig:
 
     @classmethod
     def create_test_instance(
-        cls, api_key, system_prompt, user_prompt, response_keys, model=""
+        cls, api_key, system_prompt, user_prompt, response_keys, model="", endpoint=""
     ):
         """For testing only"""
         obj = cls(None)
@@ -37,6 +37,7 @@ class PromptConfig:
         obj.required_fields = obj._extract_text_between_braces(obj.user_prompt)
         obj.config_name = ""
         obj.model = model
+        obj.endpoint = endpoint
         return obj
 
     def refresh(self) -> None:

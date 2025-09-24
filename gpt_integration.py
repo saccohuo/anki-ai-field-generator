@@ -1,5 +1,5 @@
-from aqt import mw
-from aqt.qt import QAction, QMenu
+from aqt import gui_hooks, mw
+from aqt.qt import QAction, QMessageBox, QMenu
 from anki import hooks
 
 from .client_factory import ClientFactory
@@ -15,15 +15,23 @@ def show_config_dialog(parent):
     dialog.exec()
 
 
-def on_setup_menus(browser):
-    def display_ui():
-        client_factory = ClientFactory(browser)
-        client_factory.show()
+def _launch_client_ui(browser) -> None:
+    client_factory = ClientFactory(browser)
+    if not client_factory.notes:
+        QMessageBox.information(
+            browser,
+            "Anki AI",
+            "Select at least one note before launching the Anki AI plugin.",
+        )
+        return
+    client_factory.show()
 
+
+def on_setup_menus(browser):
     menu = QMenu("Anki AI", browser.form.menubar)
     browser.form.menubar.addMenu(menu)
     cps_action = QAction("Update Your Flashcards with AI", mw)
-    cps_action.triggered.connect(display_ui)
+    cps_action.triggered.connect(lambda: _launch_client_ui(browser))
     menu.addAction(cps_action)
 
     settings_action = QAction("Manage AI Configurations", mw)
@@ -32,6 +40,16 @@ def on_setup_menus(browser):
 
 
 hooks.addHook("browser.setupMenus", on_setup_menus)
+
+
+
+def on_will_show_context_menu(browser, menu):
+    action = QAction("Update Your Flashcards with AI", browser)
+    action.triggered.connect(lambda _: _launch_client_ui(browser))
+    menu.addAction(action)
+
+
+gui_hooks.browser_will_show_context_menu.append(on_will_show_context_menu)
 
 
 def _ensure_tools_menu_entry():
