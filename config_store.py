@@ -29,6 +29,10 @@ class LLMConfig:
     audio_model: str = ""
     audio_voice: str = ""
     audio_format: str = ""
+    text_mapping_entries: List[Dict[str, Any]] = field(default_factory=list)
+    enable_text_generation: bool = True
+    enable_image_generation: bool = True
+    enable_audio_generation: bool = True
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -50,6 +54,10 @@ class LLMConfig:
             "audio_model": self.audio_model,
             "audio_voice": self.audio_voice,
             "audio_format": self.audio_format,
+            "text_mapping_entries": self.text_mapping_entries,
+            "enable_text_generation": self.enable_text_generation,
+            "enable_image_generation": self.enable_image_generation,
+            "enable_audio_generation": self.enable_audio_generation,
         }
 
     @classmethod
@@ -73,6 +81,10 @@ class LLMConfig:
             audio_model=data.get("audio_model", ""),
             audio_voice=data.get("audio_voice", ""),
             audio_format=data.get("audio_format", ""),
+            text_mapping_entries=list(data.get("text_mapping_entries", [])),
+            enable_text_generation=data.get("enable_text_generation", True),
+            enable_image_generation=data.get("enable_image_generation", True),
+            enable_audio_generation=data.get("enable_audio_generation", True),
         )
 
 

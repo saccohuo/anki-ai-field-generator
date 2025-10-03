@@ -20,6 +20,7 @@ class SettingsNames:
     SYSTEM_PROMPT_SETTING_NAME = "system_prompt"
     USER_PROMPT_SETTING_NAME = "user_prompt"
     RESPONSE_KEYS_SETTING_NAME = "response_keys"
+    TEXT_MAPPING_ENTRIES_SETTING_NAME = "text_mapping_entries"
     IMAGE_MAPPING_SETTING_NAME = "image_prompt_mappings"
     IMAGE_API_KEY_SETTING_NAME = "image_api_key"
     IMAGE_ENDPOINT_SETTING_NAME = "image_endpoint"
@@ -30,6 +31,9 @@ class SettingsNames:
     AUDIO_VOICE_SETTING_NAME = "audio_voice"
     AUDIO_ENDPOINT_SETTING_NAME = "audio_endpoint"
     AUDIO_FORMAT_SETTING_NAME = "audio_format"
+    ENABLE_TEXT_GENERATION_SETTING_NAME = "enable_text_generation"
+    ENABLE_IMAGE_GENERATION_SETTING_NAME = "enable_image_generation"
+    ENABLE_AUDIO_GENERATION_SETTING_NAME = "enable_audio_generation"
 
 
 def get_settings() -> QSettings:

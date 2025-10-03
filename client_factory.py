@@ -2,6 +2,7 @@
 Factory that returns the corrent LLM Client configurations.
 """
 
+import json
 from typing import Optional
 
 from .claude_client import ClaudeClient
@@ -49,12 +50,33 @@ class ClientFactory:
         self.client_name = client_name
         set_new_settings_group(self.app_settings, self.client_name)
 
+    def _get_bool_setting(self, setting_name: str, default: bool = True) -> bool:
+        value = self.app_settings.value(setting_name, defaultValue=default)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.lower() in {"1", "true", "yes"}
+        return bool(value)
+
+    @staticmethod
+    def _mapping_entry_enabled(entry: str) -> bool:
+        if not isinstance(entry, str):
+            return False
+        if "::" in entry:
+            _, flag = entry.rsplit("::", 1)
+            return flag.strip().lower() not in {"0", "false"}
+        return True
+
     def get_speech_client(self) -> Optional[SpeechClient]:
         """Return a speech client when speech generation is configured."""
+        if not self._get_bool_setting(
+            SettingsNames.ENABLE_AUDIO_GENERATION_SETTING_NAME, True
+        ):
+            return None
         audio_mappings = self.app_settings.value(
             SettingsNames.AUDIO_MAPPING_SETTING_NAME, type="QStringList"
         ) or []
-        if not audio_mappings:
+        if not any(self._mapping_entry_enabled(entry) for entry in audio_mappings):
             return None
         speech_config = SpeechConfig.from_settings(self.app_settings)
         if not speech_config.has_credentials():
@@ -163,6 +185,22 @@ class ClientFactory:
                 self.app_settings.setValue(
                     SettingsNames.AUDIO_FORMAT_SETTING_NAME, config.audio_format or "wav"
                 )
+                self.app_settings.setValue(
+                    SettingsNames.TEXT_MAPPING_ENTRIES_SETTING_NAME,
+                    json.dumps(config.text_mapping_entries or [], ensure_ascii=False),
+                )
+                self.app_settings.setValue(
+                    SettingsNames.ENABLE_TEXT_GENERATION_SETTING_NAME,
+                    config.enable_text_generation,
+                )
+                self.app_settings.setValue(
+                    SettingsNames.ENABLE_IMAGE_GENERATION_SETTING_NAME,
+                    config.enable_image_generation,
+                )
+                self.app_settings.setValue(
+                    SettingsNames.ENABLE_AUDIO_GENERATION_SETTING_NAME,
+                    config.enable_audio_generation,
+                )
                 prompt_config.refresh()
             llm_client = CustomLLMClient(prompt_config)
             return llm_client
@@ -203,11 +241,24 @@ class ClientFactory:
         This also refreshes the settings and the LLM client, as the user may have
         changed them.
         """
+        generate_text = self._get_bool_setting(
+            SettingsNames.ENABLE_TEXT_GENERATION_SETTING_NAME, True
+        )
+        generate_images = self._get_bool_setting(
+            SettingsNames.ENABLE_IMAGE_GENERATION_SETTING_NAME, True
+        )
+        generate_audio = self._get_bool_setting(
+            SettingsNames.ENABLE_AUDIO_GENERATION_SETTING_NAME, True
+        )
+        speech_client = self.get_speech_client() if generate_audio else None
         note_processor = NoteProcessor(
             notes,
             self.get_client(),
             self.app_settings,
-            speech_client=self.get_speech_client(),
+            speech_client=speech_client,
+            generate_text=generate_text,
+            generate_images=generate_images,
+            generate_audio=generate_audio,
         )
         dialog = ProgressDialog(note_processor, success_callback=self.mw.close)
         dialog.exec()

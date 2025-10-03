@@ -146,6 +146,13 @@ Use the <em>Speech Generation Mapping</em> section in the settings dialog to map
 - The first field in each mapping provides the text to be spoken; the second field receives only the generated <code>[sound:...]</code> tag.
 - Existing field contents are preserved; the new audio tag is appended on a new line if needed.
 
+<details>
+<summary><b>Gemini 2.5 预设音色（2025-09-30 更新）</b></summary>
+<br/>
+Zephyr — Bright；Puck — Upbeat；Charon — Informative；Kore — Firm；Fenrir — Excitable；Leda — Youthful；Orus — Firm；Aoede — Breezy；Callirrhoe — Easy-going；Autonoe — Bright；Enceladus — Breathy；Iapetus — Clear；Umbriel — Easy-going；Algieba — Smooth；Despina — Smooth；Erinome — Clear；Algenib — Gravelly；Rasalgethi — Informative；Laomedeia — Upbeat；Achernar — Soft；Alnilam — Firm；Schedar — Even；Gacrux — Mature；Pulcherrima — Forward；Achird — Friendly；Zubenelgenubi — Casual；Vindemiatrix — Gentle；Sadachbia — Lively；Sadaltager — Knowledgeable；Sulafat — Warm。
+
+</details>
+
 Run the add-on again whenever you want to refresh the audio files after changing settings.
 
 <em>Live verification</em>: 若需实际走通 Gemini TTS，可在仓库根目录运行 `python -m tests.speech.run_gemini_tts_sample`，或在设置了 `GEMINI_API_KEY` 与 `RUN_GEMINI_TTS_LIVE_TEST=1` 后执行 `python -m unittest tests.speech.live_gemini_tts_test`。

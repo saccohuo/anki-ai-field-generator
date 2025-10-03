@@ -11,7 +11,21 @@
       "system_prompt": "",
       "user_prompt": "",
       "response_keys": [],
-      "destination_fields": []
+      "destination_fields": [],
+      "text_mapping_entries": [],
+      "image_prompt_mappings": [],
+      "image_api_key": "",
+      "image_endpoint": "",
+      "image_model": "",
+      "audio_prompt_mappings": [],
+      "audio_api_key": "",
+      "audio_endpoint": "",
+      "audio_model": "",
+      "audio_voice": "",
+      "audio_format": "wav",
+      "enable_text_generation": true,
+      "enable_image_generation": true,
+      "enable_audio_generation": true
     }
   ]
 }

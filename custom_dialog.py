@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Optional
 
 from PyQt6.QtWidgets import (
@@ -175,27 +176,72 @@ class CustomDialog(UserBaseDialog):
         self._set_setting(SettingsNames.AUDIO_MODEL_SETTING_NAME, config.audio_model)
         self._set_setting(SettingsNames.AUDIO_VOICE_SETTING_NAME, config.audio_voice)
         self._set_setting(SettingsNames.AUDIO_FORMAT_SETTING_NAME, config.audio_format or "wav")
+        text_entries = config.text_mapping_entries or [
+            {
+                "key": key,
+                "field": field,
+                "enabled": True,
+            }
+            for key, field in zip(config.response_keys, config.destination_fields)
+        ]
         if hasattr(self, "two_col_form") and self.two_col_form:
-            self.two_col_form.set_inputs(
-                config.response_keys,
-                config.destination_fields,
-            )
+            rows = [
+                (
+                    entry.get("key", ""),
+                    entry.get("field", ""),
+                    bool(entry.get("enabled", True)),
+                )
+                for entry in text_entries
+            ]
+            self.two_col_form.set_rows(rows)
+        self.app_settings.setValue(
+            SettingsNames.TEXT_MAPPING_ENTRIES_SETTING_NAME,
+            json.dumps(text_entries, ensure_ascii=False),
+        )
+        if self._text_generation_checkbox is not None:
+            self._text_generation_checkbox.setChecked(config.enable_text_generation)
+        self.app_settings.setValue(
+            SettingsNames.ENABLE_TEXT_GENERATION_SETTING_NAME,
+            config.enable_text_generation,
+        )
         if hasattr(self, "image_mapping_form") and self.image_mapping_form:
-            pairs = [
-                tuple(part.strip() for part in mapping.split(IMAGE_MAPPING_SEPARATOR, 1))
-                for mapping in config.image_prompt_mappings
-                if IMAGE_MAPPING_SEPARATOR in mapping
-            ]
-            self.image_mapping_form.set_pairs(pairs)
+            image_rows = self._decode_mapping_rows(config.image_prompt_mappings)
+            self.image_mapping_form.set_pairs(image_rows)
+        self.app_settings.setValue(
+            SettingsNames.IMAGE_MAPPING_SETTING_NAME,
+            config.image_prompt_mappings,
+        )
+        if self._image_generation_checkbox is not None:
+            self._image_generation_checkbox.setChecked(config.enable_image_generation)
+            self.image_mapping_form.set_master_override(
+                self._image_generation_checkbox.isChecked()
+            )
+        self.app_settings.setValue(
+            SettingsNames.ENABLE_IMAGE_GENERATION_SETTING_NAME,
+            config.enable_image_generation,
+        )
         if hasattr(self, "audio_mapping_form") and self.audio_mapping_form:
-            audio_pairs = [
-                tuple(part.strip() for part in mapping.split(IMAGE_MAPPING_SEPARATOR, 1))
-                for mapping in config.audio_prompt_mappings
-                if IMAGE_MAPPING_SEPARATOR in mapping
-            ]
-            self.audio_mapping_form.set_pairs(audio_pairs)
+            audio_rows = self._decode_mapping_rows(config.audio_prompt_mappings)
+            self.audio_mapping_form.set_pairs(audio_rows)
+        self.app_settings.setValue(
+            SettingsNames.AUDIO_MAPPING_SETTING_NAME,
+            config.audio_prompt_mappings,
+        )
+        if self._audio_generation_checkbox is not None:
+            self._audio_generation_checkbox.setChecked(config.enable_audio_generation)
+            self.audio_mapping_form.set_master_override(
+                self._audio_generation_checkbox.isChecked()
+            )
+        self.app_settings.setValue(
+            SettingsNames.ENABLE_AUDIO_GENERATION_SETTING_NAME,
+            config.enable_audio_generation,
+        )
         self.app_settings.setValue(SettingsNames.CONFIG_NAME_SETTING_NAME, config.name)
         self._active_config_name = config.name
+        if self.two_col_form and self._text_generation_checkbox is not None:
+            self.two_col_form.set_master_override(
+                self._text_generation_checkbox.isChecked()
+            )
 
     def _set_setting(self, setting_name: str, value: str) -> None:
         widget = self.ui_tools.widgets.get(setting_name)
@@ -211,17 +257,31 @@ class CustomDialog(UserBaseDialog):
     def _persist_current_config(self) -> None:
         settings = self.ui_tools.get_settings()
         response_keys, destination_fields = self.two_col_form.get_inputs()
+        all_text_rows = self.two_col_form.get_all_rows()
+        text_entries = [
+            {
+                "key": row.get("key", ""),
+                "field": row.get("field", ""),
+                "enabled": bool(row.get("enabled", True)),
+            }
+            for row in all_text_rows
+            if row.get("key") or row.get("field")
+        ]
         image_pairs = []
         if hasattr(self, "image_mapping_form") and self.image_mapping_form:
-            image_pairs = self.image_mapping_form.get_pairs()
+            image_pairs = self.image_mapping_form.get_all_rows()
         image_mappings = [
-            f"{prompt}{IMAGE_MAPPING_SEPARATOR}{image}" for prompt, image in image_pairs
+            self._encode_mapping_entry(prompt, image, enabled)
+            for prompt, image, enabled in image_pairs
+            if prompt and image
         ]
         audio_pairs = []
         if hasattr(self, "audio_mapping_form") and self.audio_mapping_form:
-            audio_pairs = self.audio_mapping_form.get_pairs()
+            audio_pairs = self.audio_mapping_form.get_all_rows()
         audio_mappings = [
-            f"{prompt}{IMAGE_MAPPING_SEPARATOR}{audio}" for prompt, audio in audio_pairs
+            self._encode_mapping_entry(prompt, audio, enabled)
+            for prompt, audio, enabled in audio_pairs
+            if prompt and audio
         ]
         config = LLMConfig(
             name=settings.get(SettingsNames.CONFIG_NAME_SETTING_NAME, "").strip(),
@@ -242,6 +302,22 @@ class CustomDialog(UserBaseDialog):
             audio_model=settings.get(SettingsNames.AUDIO_MODEL_SETTING_NAME, "").strip(),
             audio_voice=settings.get(SettingsNames.AUDIO_VOICE_SETTING_NAME, "").strip(),
             audio_format=(settings.get(SettingsNames.AUDIO_FORMAT_SETTING_NAME, "wav").strip() or "wav"),
+            text_mapping_entries=text_entries,
+            enable_text_generation=(
+                self._text_generation_checkbox.isChecked()
+                if self._text_generation_checkbox is not None
+                else True
+            ),
+            enable_image_generation=(
+                self._image_generation_checkbox.isChecked()
+                if self._image_generation_checkbox is not None
+                else True
+            ),
+            enable_audio_generation=(
+                self._audio_generation_checkbox.isChecked()
+                if self._audio_generation_checkbox is not None
+                else True
+            ),
         )
         if self._active_config_name and self._active_config_name != config.name:
             self.store.delete(self._active_config_name)

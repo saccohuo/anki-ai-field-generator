@@ -1,4 +1,6 @@
+import json
 from abc import ABCMeta, abstractmethod
+
 from anki.notes import Note as AnkiNote
 from aqt.qt import (
     QSettings,
@@ -8,8 +10,10 @@ from aqt.qt import (
     QVBoxLayout,
     Qt,
     QScrollArea,
+    QCheckBox,
 )
 from PyQt6 import QtCore
+
 from .settings import SettingsNames
 from .two_col_layout import DynamicForm, ImageMappingForm, AudioMappingForm
 from .ui_tools import UITools
@@ -44,6 +48,9 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
         self._audio_model_entry = None
         self._audio_voice_entry = None
         self._audio_format_entry = None
+        self._text_generation_checkbox: QCheckBox | None = None
+        self._image_generation_checkbox: QCheckBox | None = None
+        self._audio_generation_checkbox: QCheckBox | None = None
 
     def show(self):
         if self.layout() is not None:
@@ -95,14 +102,21 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
         right_layout.addWidget(
             self.ui_tools.create_descriptive_text(self.mapping_instruction_text)
         )
-        self.two_col_form = DynamicForm(
-            self.app_settings.value(
-                SettingsNames.RESPONSE_KEYS_SETTING_NAME, type="QStringList"
-            ),
-            self.app_settings.value(
-                SettingsNames.DESTINATION_FIELD_SETTING_NAME, type="QStringList"
-            ),
-            card_fields,
+        text_rows = self._load_text_rows(card_fields)
+        self._text_generation_checkbox = QCheckBox("Generate text fields")
+        self._text_generation_checkbox.setChecked(
+            self._get_bool_setting(
+                SettingsNames.ENABLE_TEXT_GENERATION_SETTING_NAME, default=True
+            )
+        )
+        right_layout.addWidget(self._text_generation_checkbox)
+
+        self.two_col_form = DynamicForm(text_rows, card_fields)
+        self._text_generation_checkbox.stateChanged.connect(
+            self._on_text_generation_toggled
+        )
+        self.two_col_form.set_master_override(
+            self._text_generation_checkbox.isChecked()
         )
         right_layout.addWidget(self.two_col_form)
 
@@ -115,15 +129,25 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
                 "Map a prompt field to the field that should receive the generated image. When the prompt field contains text, the configured image model will be invoked and the resulting image will be saved into the mapped field."
             )
         )
+        self._image_generation_checkbox = QCheckBox("Generate images")
+        self._image_generation_checkbox.setChecked(
+            self._get_bool_setting(
+                SettingsNames.ENABLE_IMAGE_GENERATION_SETTING_NAME, default=True
+            )
+        )
         image_mapping_strings = self.app_settings.value(
-            SettingsNames.IMAGE_MAPPING_SETTING_NAME, type="QStringList"
+            SettingsNames.IMAGE_MAPPING_SETTING_NAME,
+            type="QStringList",
         ) or []
-        pairs = [
-            tuple(part.strip() for part in mapping.split(IMAGE_MAPPING_SEPARATOR, 1))
-            for mapping in image_mapping_strings
-            if IMAGE_MAPPING_SEPARATOR in mapping
-        ]
-        self.image_mapping_form = ImageMappingForm(pairs, card_fields)
+        image_rows = self._decode_mapping_rows(image_mapping_strings)
+        self.image_mapping_form = ImageMappingForm(image_rows, card_fields)
+        self._image_generation_checkbox.stateChanged.connect(
+            self._on_image_generation_toggled
+        )
+        self.image_mapping_form.set_master_override(
+            self._image_generation_checkbox.isChecked()
+        )
+        right_layout.addWidget(self._image_generation_checkbox)
         right_layout.addWidget(self.image_mapping_form)
 
         right_layout.addWidget(
@@ -157,15 +181,25 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
                 "Map the text field that should be spoken to the field that should receive the audio tag. The plugin reads the text from the first field, synthesizes speech, and writes only a [sound:] tag into the second field."
             )
         )
+        self._audio_generation_checkbox = QCheckBox("Generate speech")
+        self._audio_generation_checkbox.setChecked(
+            self._get_bool_setting(
+                SettingsNames.ENABLE_AUDIO_GENERATION_SETTING_NAME, default=True
+            )
+        )
         audio_mapping_strings = self.app_settings.value(
-            SettingsNames.AUDIO_MAPPING_SETTING_NAME, type="QStringList"
+            SettingsNames.AUDIO_MAPPING_SETTING_NAME,
+            type="QStringList",
         ) or []
-        audio_pairs = [
-            tuple(part.strip() for part in mapping.split(IMAGE_MAPPING_SEPARATOR, 1))
-            for mapping in audio_mapping_strings
-            if IMAGE_MAPPING_SEPARATOR in mapping
-        ]
-        self.audio_mapping_form = AudioMappingForm(audio_pairs, card_fields)
+        audio_rows = self._decode_mapping_rows(audio_mapping_strings)
+        self.audio_mapping_form = AudioMappingForm(audio_rows, card_fields)
+        self._audio_generation_checkbox.stateChanged.connect(
+            self._on_audio_generation_toggled
+        )
+        self.audio_mapping_form.set_master_override(
+            self._audio_generation_checkbox.isChecked()
+        )
+        right_layout.addWidget(self._audio_generation_checkbox)
         right_layout.addWidget(self.audio_mapping_form)
 
         right_layout.addWidget(
@@ -317,25 +351,57 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
             SettingsNames.DESTINATION_FIELD_SETTING_NAME,
             fields,
         )
+        all_text_rows = self.two_col_form.get_all_rows()
+        filtered_text_entries = [
+            row
+            for row in all_text_rows
+            if row.get("key") or row.get("field")
+        ]
+        self.app_settings.setValue(
+            SettingsNames.TEXT_MAPPING_ENTRIES_SETTING_NAME,
+            json.dumps(filtered_text_entries, ensure_ascii=False),
+        )
+        if self._text_generation_checkbox is not None:
+            self.app_settings.setValue(
+                SettingsNames.ENABLE_TEXT_GENERATION_SETTING_NAME,
+                self._text_generation_checkbox.isChecked(),
+            )
+
         image_mapping_strings: list[str] = []
         if self.image_mapping_form is not None:
-            image_pairs = self.image_mapping_form.get_pairs()
+            all_image_rows = self.image_mapping_form.get_all_rows()
             image_mapping_strings = [
-                f"{prompt}{IMAGE_MAPPING_SEPARATOR}{image}" for prompt, image in image_pairs
+                self._encode_mapping_entry(prompt, target, enabled)
+                for prompt, target, enabled in all_image_rows
+                if prompt and target
             ]
         self.app_settings.setValue(
-            SettingsNames.IMAGE_MAPPING_SETTING_NAME, image_mapping_strings
+            SettingsNames.IMAGE_MAPPING_SETTING_NAME,
+            image_mapping_strings,
         )
+        if self._image_generation_checkbox is not None:
+            self.app_settings.setValue(
+                SettingsNames.ENABLE_IMAGE_GENERATION_SETTING_NAME,
+                self._image_generation_checkbox.isChecked(),
+            )
 
         audio_mapping_strings: list[str] = []
         if self.audio_mapping_form is not None:
-            audio_pairs = self.audio_mapping_form.get_pairs()
+            all_audio_rows = self.audio_mapping_form.get_all_rows()
             audio_mapping_strings = [
-                f"{prompt}{IMAGE_MAPPING_SEPARATOR}{audio}" for prompt, audio in audio_pairs
+                self._encode_mapping_entry(prompt, target, enabled)
+                for prompt, target, enabled in all_audio_rows
+                if prompt and target
             ]
         self.app_settings.setValue(
-            SettingsNames.AUDIO_MAPPING_SETTING_NAME, audio_mapping_strings
+            SettingsNames.AUDIO_MAPPING_SETTING_NAME,
+            audio_mapping_strings,
         )
+        if self._audio_generation_checkbox is not None:
+            self.app_settings.setValue(
+                SettingsNames.ENABLE_AUDIO_GENERATION_SETTING_NAME,
+                self._audio_generation_checkbox.isChecked(),
+            )
         return True
 
     def are_settings_valid(self) -> bool:
@@ -350,7 +416,12 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
         ):
             show_error_message("Please enter an API key.")
             return False
-        if (
+        text_enabled = (
+            self._text_generation_checkbox.isChecked()
+            if self._text_generation_checkbox is not None
+            else True
+        )
+        if text_enabled and (
             SettingsNames.USER_PROMPT_SETTING_NAME not in settings
             or not settings[SettingsNames.USER_PROMPT_SETTING_NAME]
         ):
@@ -358,12 +429,19 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
             return False
 
         keys, fields = self.two_col_form.get_inputs()
-        if len(keys) == 0 or len(fields) == 0:
+        if text_enabled and (len(keys) == 0 or len(fields) == 0):
             show_error_message("You must save at least one AI Output to one Field.")
             return False
 
+        image_enabled = (
+            self._image_generation_checkbox.isChecked()
+            if self._image_generation_checkbox is not None
+            else True
+        )
         has_image_mapping = bool(
-            self.image_mapping_form and self.image_mapping_form.get_pairs()
+            image_enabled
+            and self.image_mapping_form
+            and self.image_mapping_form.get_pairs()
         )
         if has_image_mapping:
             api_key = ""
@@ -375,8 +453,15 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
                 )
                 return False
 
+        audio_enabled = (
+            self._audio_generation_checkbox.isChecked()
+            if self._audio_generation_checkbox is not None
+            else True
+        )
         has_audio_mapping = bool(
-            self.audio_mapping_form and self.audio_mapping_form.get_pairs()
+            audio_enabled
+            and self.audio_mapping_form
+            and self.audio_mapping_form.get_pairs()
         )
         if has_audio_mapping:
             audio_key = ""
@@ -389,6 +474,86 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
                 return False
 
         return True
+
+    def _on_text_generation_toggled(self, state: int) -> None:
+        if self.two_col_form is not None:
+            checked = Qt.CheckState(state) == Qt.CheckState.Checked
+            self.two_col_form.set_master_override(checked)
+
+    def _on_image_generation_toggled(self, state: int) -> None:
+        if self.image_mapping_form is not None:
+            checked = Qt.CheckState(state) == Qt.CheckState.Checked
+            self.image_mapping_form.set_master_override(checked)
+
+    def _on_audio_generation_toggled(self, state: int) -> None:
+        if self.audio_mapping_form is not None:
+            checked = Qt.CheckState(state) == Qt.CheckState.Checked
+            self.audio_mapping_form.set_master_override(checked)
+
+    def _get_bool_setting(self, name: str, default: bool = True) -> bool:
+        value = self.app_settings.value(name, defaultValue=default)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.lower() in {"1", "true", "yes"}
+        return bool(value)
+
+    def _load_text_rows(self, card_fields: list[str]) -> list[tuple[str, str, bool]]:
+        raw_entries = self.app_settings.value(
+            SettingsNames.TEXT_MAPPING_ENTRIES_SETTING_NAME,
+            type=str,
+        )
+        rows: list[tuple[str, str, bool]] = []
+        if raw_entries:
+            try:
+                data = json.loads(raw_entries)
+                for entry in data:
+                    if not isinstance(entry, dict):
+                        continue
+                    key = str(entry.get("key", "")).strip()
+                    field = str(entry.get("field", "")).strip()
+                    enabled = bool(entry.get("enabled", True))
+                    rows.append((key, field, enabled))
+            except (json.JSONDecodeError, TypeError):
+                rows = []
+        if not rows:
+            keys = self.app_settings.value(
+                SettingsNames.RESPONSE_KEYS_SETTING_NAME, type="QStringList"
+            ) or []
+            fields = self.app_settings.value(
+                SettingsNames.DESTINATION_FIELD_SETTING_NAME, type="QStringList"
+            ) or []
+            if keys and fields and len(keys) == len(fields):
+                rows = [(key, field, True) for key, field in zip(keys, fields)]
+        return rows
+
+    def _decode_mapping_rows(
+        self, entries: list[str]
+    ) -> list[tuple[str, str, bool]]:
+        rows: list[tuple[str, str, bool]] = []
+        for mapping in entries:
+            if not isinstance(mapping, str) or IMAGE_MAPPING_SEPARATOR not in mapping:
+                continue
+            enabled = True
+            base = mapping
+            if "::" in mapping:
+                base, flag = mapping.rsplit("::", 1)
+                enabled = flag.strip() not in {"0", "false", "False"}
+            if IMAGE_MAPPING_SEPARATOR not in base:
+                continue
+            prompt, target = [
+                part.strip() for part in base.split(IMAGE_MAPPING_SEPARATOR, 1)
+            ]
+            if prompt or target:
+                rows.append((prompt, target, enabled))
+        return rows
+
+    @staticmethod
+    def _encode_mapping_entry(prompt: str, target: str, enabled: bool) -> str:
+        return (
+            f"{prompt}{IMAGE_MAPPING_SEPARATOR}{target}::"
+            f"{'1' if enabled else '0'}"
+        )
 
 
 def show_error_message(message: str):

@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QFormLayout,
+    QCheckBox,
 )
 
 from .config_store import ConfigStore, LLMConfig
@@ -92,11 +93,19 @@ class ConfigManagerDialog(QDialog):
         self.destination_fields_input.setPlaceholderText("Comma separated Anki fields")
         form_layout.addRow(QLabel("Destination Fields:"), self.destination_fields_input)
 
+        self.text_generation_checkbox = QCheckBox("Enable text generation")
+        self.text_generation_checkbox.setChecked(True)
+        form_layout.addRow(QLabel("Text Generation:"), self.text_generation_checkbox)
+
         self.image_mapping_input = QTextEdit()
         self.image_mapping_input.setPlaceholderText(
             "prompt_field -> image_field (one per line)"
         )
         form_layout.addRow(QLabel("Image Prompt Mappings:"), self.image_mapping_input)
+
+        self.image_generation_checkbox = QCheckBox("Enable image generation")
+        self.image_generation_checkbox.setChecked(True)
+        form_layout.addRow(QLabel("Image Generation:"), self.image_generation_checkbox)
 
         self.image_api_key_input = QLineEdit()
         self.image_api_key_input.setPlaceholderText("Override image API key")
@@ -123,6 +132,10 @@ class ConfigManagerDialog(QDialog):
             "Each mapping takes the text from the first field, runs TTS, and writes the resulting [sound:...] tag into the second field."
         )
         form_layout.addRow(QLabel("Speech Field Mappings:"), self.audio_mapping_input)
+
+        self.audio_generation_checkbox = QCheckBox("Enable speech generation")
+        self.audio_generation_checkbox.setChecked(True)
+        form_layout.addRow(QLabel("Speech Generation:"), self.audio_generation_checkbox)
 
         self.audio_api_key_input = QLineEdit()
         self.audio_api_key_input.setPlaceholderText("Speech API key (required for audio generation)")
@@ -200,6 +213,8 @@ class ConfigManagerDialog(QDialog):
         self.destination_fields_input.setText(
             ", ".join(config.destination_fields)
         )
+        if hasattr(self, "text_generation_checkbox"):
+            self.text_generation_checkbox.setChecked(config.enable_text_generation)
         if hasattr(self, "image_mapping_input"):
             self.image_mapping_input.setPlainText("\n".join(config.image_prompt_mappings))
         if hasattr(self, "image_api_key_input"):
@@ -208,6 +223,8 @@ class ConfigManagerDialog(QDialog):
             self.image_endpoint_input.setText(config.image_endpoint)
         if hasattr(self, "image_model_input"):
             self.image_model_input.setText(config.image_model)
+        if hasattr(self, "image_generation_checkbox"):
+            self.image_generation_checkbox.setChecked(config.enable_image_generation)
         if hasattr(self, "audio_mapping_input"):
             self.audio_mapping_input.setPlainText("\n".join(config.audio_prompt_mappings))
         if hasattr(self, "audio_api_key_input"):
@@ -221,6 +238,8 @@ class ConfigManagerDialog(QDialog):
         if hasattr(self, "audio_format_input"):
             value = config.audio_format or "wav"
             self.audio_format_input.setText(value)
+        if hasattr(self, "audio_generation_checkbox"):
+            self.audio_generation_checkbox.setChecked(config.enable_audio_generation)
 
     def _clear_form(self) -> None:
         self.name_input.clear()
@@ -251,6 +270,12 @@ class ConfigManagerDialog(QDialog):
             self.audio_voice_input.clear()
         if hasattr(self, "audio_format_input"):
             self.audio_format_input.setText("wav")
+        if hasattr(self, "text_generation_checkbox"):
+            self.text_generation_checkbox.setChecked(True)
+        if hasattr(self, "image_generation_checkbox"):
+            self.image_generation_checkbox.setChecked(True)
+        if hasattr(self, "audio_generation_checkbox"):
+            self.audio_generation_checkbox.setChecked(True)
 
     # Button handlers --------------------------------------------------
 
@@ -295,40 +320,20 @@ class ConfigManagerDialog(QDialog):
         destination_fields = self._parse_comma_list(
             self.destination_fields_input.text()
         )
-        mapping_lines = []
+        image_mappings = []
         if hasattr(self, "image_mapping_input"):
-            mapping_lines = [
+            image_mappings = [
                 line.strip()
                 for line in self.image_mapping_input.toPlainText().splitlines()
-                if line.strip()
-            ]
-        image_mappings = []
-        for line in mapping_lines:
-            if IMAGE_MAPPING_SEPARATOR in line:
-                prompt, image_field = [
-                    part.strip() for part in line.split(IMAGE_MAPPING_SEPARATOR, 1)
-                ]
-                if prompt and image_field:
-                    image_mappings.append(
-                        f"{prompt}{IMAGE_MAPPING_SEPARATOR}{image_field}"
-                    )
-        audio_mapping_lines = []
-        if hasattr(self, "audio_mapping_input"):
-            audio_mapping_lines = [
-                line.strip()
-                for line in self.audio_mapping_input.toPlainText().splitlines()
-                if line.strip()
+                if IMAGE_MAPPING_SEPARATOR in line.strip()
             ]
         audio_mappings = []
-        for line in audio_mapping_lines:
-            if IMAGE_MAPPING_SEPARATOR in line:
-                prompt, audio_field = [
-                    part.strip() for part in line.split(IMAGE_MAPPING_SEPARATOR, 1)
-                ]
-                if prompt and audio_field:
-                    audio_mappings.append(
-                        f"{prompt}{IMAGE_MAPPING_SEPARATOR}{audio_field}"
-                    )
+        if hasattr(self, "audio_mapping_input"):
+            audio_mappings = [
+                line.strip()
+                for line in self.audio_mapping_input.toPlainText().splitlines()
+                if IMAGE_MAPPING_SEPARATOR in line.strip()
+            ]
         config = LLMConfig(
             name=name,
             endpoint=endpoint,
@@ -351,6 +356,29 @@ class ConfigManagerDialog(QDialog):
                 (self.audio_format_input.text().strip() or "wav")
                 if hasattr(self, "audio_format_input")
                 else "wav"
+            ),
+            text_mapping_entries=[
+                {
+                    "key": key,
+                    "field": field,
+                    "enabled": True,
+                }
+                for key, field in zip(response_keys, destination_fields)
+            ],
+            enable_text_generation=(
+                self.text_generation_checkbox.isChecked()
+                if hasattr(self, "text_generation_checkbox")
+                else True
+            ),
+            enable_image_generation=(
+                self.image_generation_checkbox.isChecked()
+                if hasattr(self, "image_generation_checkbox")
+                else True
+            ),
+            enable_audio_generation=(
+                self.audio_generation_checkbox.isChecked()
+                if hasattr(self, "audio_generation_checkbox")
+                else True
             ),
         )
         if self._current_name and self._current_name != name:

@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 import html
+import json
 import re
 
 from anki.notes import Note as AnkiNote
@@ -40,6 +41,10 @@ class NoteProcessor(QThread):
         client: LLMClient,
         settings: QSettings,
         speech_client: Optional[SpeechClient] = None,
+        *,
+        generate_text: bool = True,
+        generate_images: bool = True,
+        generate_audio: bool = True,
         missing_field_is_error: bool = False,
     ) -> None:
         super().__init__()
@@ -53,18 +58,52 @@ class NoteProcessor(QThread):
         self.response_keys = settings.value(
             SettingsNames.RESPONSE_KEYS_SETTING_NAME, type="QStringList"
         )
+        self.note_fields = list(self.note_fields or [])
+        self.response_keys = list(self.response_keys or [])
+        raw_text_entries = settings.value(
+            SettingsNames.TEXT_MAPPING_ENTRIES_SETTING_NAME,
+            defaultValue="",
+            type=str,
+        )
+        self._text_rows = self._parse_text_rows(
+            raw_text_entries,
+            self.response_keys,
+            self.note_fields,
+        )
+        if generate_text:
+            active_text_rows = [
+                (key, field)
+                for key, field, _ in self._text_rows
+                if key and field
+            ]
+        else:
+            active_text_rows = [
+                (key, field)
+                for key, field, enabled in self._text_rows
+                if enabled and key and field
+            ]
+        self.response_keys = [key for key, _ in active_text_rows]
+        self.note_fields = [field for _, field in active_text_rows]
         self._speech_client = speech_client
         audio_mappings = settings.value(
             SettingsNames.AUDIO_MAPPING_SETTING_NAME, type="QStringList"
         ) or []
-        self.audio_field_mappings: list[tuple[str, str]] = []
-        for mapping in audio_mappings:
-            if IMAGE_MAPPING_SEPARATOR in mapping:
-                prompt, audio = [
-                    part.strip() for part in mapping.split(IMAGE_MAPPING_SEPARATOR, 1)
-                ]
-                if prompt and audio:
-                    self.audio_field_mappings.append((prompt, audio))
+        decoded_audio = [self._decode_mapping_entry(entry) for entry in audio_mappings]
+        self._audio_rows = [
+            (prompt, target, enabled)
+            for prompt, target, enabled in decoded_audio
+            if prompt and target
+        ]
+        if generate_audio:
+            self.audio_field_mappings = [
+                (prompt, target) for prompt, target, _ in self._audio_rows
+            ]
+        else:
+            self.audio_field_mappings = [
+                (prompt, target)
+                for prompt, target, enabled in self._audio_rows
+                if enabled
+            ]
         self._audio_model = (
             settings.value(
                 SettingsNames.AUDIO_MODEL_SETTING_NAME, defaultValue="", type=str
@@ -84,14 +123,22 @@ class NoteProcessor(QThread):
         mappings = settings.value(
             SettingsNames.IMAGE_MAPPING_SETTING_NAME, type="QStringList"
         ) or []
-        self.image_field_mappings: list[tuple[str, str]] = []
-        for mapping in mappings:
-            if IMAGE_MAPPING_SEPARATOR in mapping:
-                prompt, image = [
-                    part.strip() for part in mapping.split(IMAGE_MAPPING_SEPARATOR, 1)
-                ]
-                if prompt and image:
-                    self.image_field_mappings.append((prompt, image))
+        decoded_images = [self._decode_mapping_entry(entry) for entry in mappings]
+        self._image_rows = [
+            (prompt, target, enabled)
+            for prompt, target, enabled in decoded_images
+            if prompt and target
+        ]
+        if generate_images:
+            self.image_field_mappings = [
+                (prompt, target) for prompt, target, _ in self._image_rows
+            ]
+        else:
+            self.image_field_mappings = [
+                (prompt, target)
+                for prompt, target, enabled in self._image_rows
+                if enabled
+            ]
         self.missing_field_is_error = missing_field_is_error
         self.current_index = 0
         self._gemini_image_client: Optional[GeminiClient] = None
@@ -101,74 +148,116 @@ class NoteProcessor(QThread):
             ErrorCode.IMAGE_MISSING_DATA: RetryPolicy(max_attempts=3, wait_seconds=3),
             ErrorCode.AUDIO_MISSING_DATA: RetryPolicy(max_attempts=3, wait_seconds=3),
         }
+        self._enable_text_generation = generate_text and bool(self.response_keys)
+        self._enable_image_generation = generate_images and bool(
+            self.image_field_mappings
+        )
+        self._enable_audio_generation = (
+            generate_audio
+            and bool(self.audio_field_mappings)
+            and speech_client is not None
+        )
+        if not self._enable_audio_generation:
+            self._speech_client = None
+
+        self._note_progress: dict[int, dict[str, Any]] = {}
+        self._initialize_note_progress()
 
     def run(self) -> None:
         for i in range(self.current_index, self.total_items):
             note = self.notes[self.current_index]
-            prompt = self.client.get_user_prompt(note, self.missing_field_is_error)
+            note_state = self._note_progress.setdefault(
+                note.id, self._create_note_state()
+            )
+            prompt_preview = self.client.get_user_prompt(
+                note, self.missing_field_is_error
+            )
             base_progress = (i / self.total_items) * 100 if self.total_items else 0
             per_card = 100 / self.total_items if self.total_items else 100
 
             self.progress_updated.emit(
                 int(base_progress),
-                f"Processing: {prompt}",
+                f"Processing: {prompt_preview}",
             )
 
-            try:
-                response = self._run_with_retry(
-                    lambda: self.client.call([prompt]),
-                    "Text generation",
-                    progress_value=int(base_progress),
-                )
-            except ExternalException as exc:
-                self.error.emit(self._format_error_message("Text generation", exc))
-                return
-
-            for note_field, response_key in zip(self.note_fields, self.response_keys):
-                note[note_field] = response[response_key]
-
-            needs_image = bool(
-                self.image_field_mappings
-                and any(
-                    prompt_field in note and str(note[prompt_field]).strip()
-                    for prompt_field, _ in self.image_field_mappings
-                )
-            )
-
-            if needs_image:
-                interim_progress = int(min(99, base_progress + per_card / 2))
-                self.progress_updated.emit(interim_progress, "Generating image...")
+            if self._enable_text_generation and not note_state["text"]:
                 try:
-                    self._apply_image_generation(
-                        note,
-                        base_progress=base_progress,
-                        per_card=per_card,
+                    response = self._run_with_retry(
+                        lambda: self.client.call([prompt_preview]),
+                        "Text generation",
+                        progress_value=int(base_progress),
                     )
                 except ExternalException as exc:
-                    self.error.emit(self._format_error_message("Image generation", exc))
-                    return
-
-            needs_speech = bool(
-                self._speech_client
-                and self.audio_field_mappings
-                and any(
-                    prompt_field in note and str(note[prompt_field]).strip()
-                    for prompt_field, _ in self.audio_field_mappings
-                )
-            )
-
-            if needs_speech:
-                speech_progress = int(min(99, base_progress + (per_card * 0.75)))
-                self.progress_updated.emit(speech_progress, "Generating audio...")
-                try:
-                    self._apply_speech_generation(
-                        note,
-                        base_progress=base_progress,
-                        per_card=per_card,
+                    self.error.emit(
+                        self._format_error_message("Text generation", exc)
                     )
-                except ExternalException as exc:
-                    self.error.emit(self._format_error_message("Speech generation", exc))
                     return
+
+                for note_field, response_key in zip(
+                    self.note_fields, self.response_keys
+                ):
+                    note[note_field] = response[response_key]
+                note_state["text"] = True
+            else:
+                note_state["text"] = True
+
+            if self._enable_image_generation:
+                needs_image = any(
+                    not note_state["image"].get((prompt_field, image_field), False)
+                    and prompt_field in note
+                    and str(note[prompt_field]).strip()
+                    for prompt_field, image_field in self.image_field_mappings
+                )
+                if needs_image:
+                    interim_progress = int(min(99, base_progress + per_card / 2))
+                    self.progress_updated.emit(interim_progress, "Generating image...")
+                    try:
+                        self._apply_image_generation(
+                            note,
+                            note_state,
+                            base_progress=base_progress,
+                            per_card=per_card,
+                        )
+                    except ExternalException as exc:
+                        self.error.emit(
+                            self._format_error_message("Image generation", exc)
+                        )
+                        return
+                else:
+                    for mapping in self.image_field_mappings:
+                        note_state["image"][mapping] = True
+            else:
+                for mapping in self.image_field_mappings:
+                    note_state["image"][mapping] = True
+
+            if self._enable_audio_generation:
+                needs_speech = any(
+                    not note_state["audio"].get((prompt_field, audio_field), False)
+                    and prompt_field in note
+                    and str(note[prompt_field]).strip()
+                    for prompt_field, audio_field in self.audio_field_mappings
+                )
+                if needs_speech:
+                    speech_progress = int(min(99, base_progress + (per_card * 0.75)))
+                    self.progress_updated.emit(speech_progress, "Generating audio...")
+                    try:
+                        self._apply_speech_generation(
+                            note,
+                            note_state,
+                            base_progress=base_progress,
+                            per_card=per_card,
+                        )
+                    except ExternalException as exc:
+                        self.error.emit(
+                            self._format_error_message("Speech generation", exc)
+                        )
+                        return
+                else:
+                    for mapping in self.audio_field_mappings:
+                        note_state["audio"][mapping] = True
+            else:
+                for mapping in self.audio_field_mappings:
+                    note_state["audio"][mapping] = True
 
             self.progress_updated.emit(
                 min(100, int(base_progress + per_card)),
@@ -185,32 +274,41 @@ class NoteProcessor(QThread):
     def _apply_speech_generation(
         self,
         note: AnkiNote,
+        state: dict[str, Any],
         *,
         base_progress: float,
         per_card: float,
     ) -> None:
         if not self._speech_client or not self.audio_field_mappings:
+            for mapping in self.audio_field_mappings:
+                state["audio"][mapping] = True
             return
 
-        pending: list[tuple[str, str, str]] = []
+        pending: list[tuple[tuple[str, str], str]] = []
         for prompt_field, audio_field in self.audio_field_mappings:
+            mapping_key = (prompt_field, audio_field)
+            if state["audio"].get(mapping_key):
+                continue
             if prompt_field not in note or audio_field not in note:
+                state["audio"][mapping_key] = True
                 continue
             prompt_raw = str(note[prompt_field])
             prompt_value = self._prepare_speech_text(prompt_raw)
             if not prompt_value:
+                state["audio"][mapping_key] = True
                 continue
-            pending.append((prompt_field, audio_field, prompt_value))
+            pending.append((mapping_key, prompt_value))
 
         if not pending:
             return
 
         retry_progress = int(min(99, base_progress + (per_card * 0.75)))
 
-        for prompt_field, audio_field, prompt_value in pending:
+        for (prompt_field, audio_field), prompt_value in pending:
             existing_audio_files = self._extract_audio_filenames(
                 str(note[audio_field])
             )
+
             def synthesize(value: str = prompt_value) -> bytes:
                 return self._speech_client.generate_speech(
                     value,
@@ -238,10 +336,12 @@ class NoteProcessor(QThread):
             note[audio_field] = audio_tag
             if existing_audio_files:
                 self._trash_audio_files(note, existing_audio_files)
+            state["audio"][(prompt_field, audio_field)] = True
 
     def _apply_image_generation(
         self,
         note: AnkiNote,
+        state: dict[str, Any],
         *,
         base_progress: float,
         per_card: float,
@@ -252,21 +352,26 @@ class NoteProcessor(QThread):
         image_client = self._get_image_client()
         configured_model = getattr(image_client.prompt_config, "model", "") or None
 
-        pending: list[tuple[str, str, str]] = []
+        pending: list[tuple[tuple[str, str], str]] = []
         for prompt_field, image_field in self.image_field_mappings:
+            mapping_key = (prompt_field, image_field)
+            if state["image"].get(mapping_key):
+                continue
             if prompt_field not in note or image_field not in note:
+                state["image"][mapping_key] = True
                 continue
             prompt_value = str(note[prompt_field]).strip()
             if not prompt_value:
+                state["image"][mapping_key] = True
                 continue
-            pending.append((prompt_field, image_field, prompt_value))
+            pending.append((mapping_key, prompt_value))
 
         if not pending:
             return
 
         retry_progress = int(min(99, base_progress + per_card / 2))
 
-        for prompt_field, image_field, prompt_value in pending:
+        for (prompt_field, image_field), prompt_value in pending:
             def generate(value: str = prompt_value) -> bytes:
                 return image_client.generate_image(value, model=configured_model)
 
@@ -277,6 +382,7 @@ class NoteProcessor(QThread):
             )
             filename = self._write_image_to_media(note, image_bytes, image_field)
             note[image_field] = f'<img src="{filename}">'
+            state["image"][(prompt_field, image_field)] = True
 
     def _write_audio_to_media(
         self,
@@ -366,6 +472,70 @@ class NoteProcessor(QThread):
         text = text.replace("&nbsp;", " ")
         text = re.sub(r"\s+", " ", text)
         return text.strip()
+
+    def _initialize_note_progress(self) -> None:
+        for note in self.notes:
+            self._note_progress[note.id] = self._create_note_state()
+
+    def _create_note_state(self) -> dict[str, Any]:
+        text_fields_present = bool(self.note_fields)
+        image_state = {
+            mapping: (not self._enable_image_generation)
+            for mapping in self.image_field_mappings
+        }
+        audio_state = {
+            mapping: (not self._enable_audio_generation)
+            for mapping in self.audio_field_mappings
+        }
+        return {
+            "text": (not self._enable_text_generation) or not text_fields_present,
+            "image": image_state,
+            "audio": audio_state,
+        }
+
+    @staticmethod
+    def _parse_text_rows(
+        raw_entries: Optional[str],
+        default_keys: list[str],
+        default_fields: list[str],
+    ) -> list[tuple[str, str, bool]]:
+        rows: list[tuple[str, str, bool]] = []
+        if raw_entries:
+            try:
+                data = json.loads(raw_entries)
+                for entry in data:
+                    if not isinstance(entry, dict):
+                        continue
+                    key = str(entry.get("key", "")).strip()
+                    field = str(entry.get("field", "")).strip()
+                    enabled = bool(entry.get("enabled", True))
+                    if key or field:
+                        rows.append((key, field, enabled))
+            except (json.JSONDecodeError, TypeError):
+                rows = []
+        if not rows and default_keys and default_fields and len(default_keys) == len(default_fields):
+            rows = [
+                (str(key).strip(), str(field).strip(), True)
+                for key, field in zip(default_keys, default_fields)
+                if str(key).strip() or str(field).strip()
+            ]
+        return rows
+
+    @staticmethod
+    def _decode_mapping_entry(entry: str) -> tuple[str, str, bool]:
+        if not isinstance(entry, str):
+            return "", "", False
+        base = entry
+        enabled = True
+        if "::" in entry:
+            base, flag = entry.rsplit("::", 1)
+            enabled = flag.strip().lower() not in {"0", "false"}
+        if IMAGE_MAPPING_SEPARATOR not in base:
+            return "", "", False
+        prompt, target = [
+            part.strip() for part in base.split(IMAGE_MAPPING_SEPARATOR, 1)
+        ]
+        return prompt, target, enabled
 
     def _write_image_to_media(
         self, note: AnkiNote, image_bytes: bytes, image_field: str
