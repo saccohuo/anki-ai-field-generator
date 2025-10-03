@@ -141,7 +141,13 @@ class NoteProcessor(QThread):
             ]
         self.missing_field_is_error = missing_field_is_error
         self.current_index = 0
-        self._gemini_image_client: Optional[GeminiClient] = None
+        self._image_provider = (
+            self.settings.value(
+                SettingsNames.IMAGE_PROVIDER_SETTING_NAME, defaultValue="gemini", type=str
+            )
+            or "gemini"
+        ).lower()
+        self._image_client: Optional[GeminiClient] = None
         retry_limit = int(
             settings.value(SettingsNames.RETRY_LIMIT_SETTING_NAME, defaultValue=50)
         )
@@ -578,10 +584,17 @@ class NoteProcessor(QThread):
         return filename
 
     def _get_image_client(self) -> GeminiClient:
-        if self._gemini_image_client is not None:
-            return self._gemini_image_client
+        if self._image_client is not None:
+            return self._image_client
 
-        api_key = self._load_gemini_api_key()
+        provider = self._image_provider
+        if provider not in {"", "gemini", "custom"}:
+            raise ExternalException(
+                f"Image provider '{provider}' is not supported yet.",
+                code=ErrorCode.INVALID_INPUT,
+            )
+
+        api_key = self._load_image_api_key()
         endpoint = (
             self.settings.value(
                 SettingsNames.IMAGE_ENDPOINT_SETTING_NAME, defaultValue="", type=str
@@ -602,10 +615,10 @@ class NoteProcessor(QThread):
             model=image_model,
             endpoint=endpoint,
         )
-        self._gemini_image_client = GeminiClient(config)
-        return self._gemini_image_client
+        self._image_client = GeminiClient(config)
+        return self._image_client
 
-    def _load_gemini_api_key(self) -> str:
+    def _load_image_api_key(self) -> str:
         api_key = (
             self.settings.value(
                 SettingsNames.IMAGE_API_KEY_SETTING_NAME, defaultValue="", type=str
@@ -634,9 +647,14 @@ class NoteProcessor(QThread):
                 policy = self._retry_policies.get(exc.code)
                 if policy and attempt < policy.max_attempts:
                     wait_seconds = policy.wait_seconds
+                    attempt_text = (
+                        f" attempt {attempt}/{policy.max_attempts}"
+                        if policy.max_attempts
+                        else ""
+                    )
                     message = (
-                        f"{stage_label} failed ({exc.code.value}). Retrying in "
-                        f"{int(wait_seconds)}s..."
+                        f"{stage_label} failed ({exc.code.value}){attempt_text}. "
+                        f"Retrying in {int(wait_seconds)}s..."
                     )
                     progress = progress_value if progress_value is not None else 0
                     self.progress_updated.emit(progress, message)

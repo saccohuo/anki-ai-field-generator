@@ -8,7 +8,7 @@ This repository is a fork of [rroessler1/anki-ai-field-generator](https://github
 Compared with the upstream project, this fork adds:
 
 - A reusable configuration store (`config_store.py`) that centralises all LLM profiles in `config.json` and auto-creates it when missing.
-- Custom LLM support with profile switching (`custom_client.py`, `custom_dialog.py`) and a shared settings dialog accessible from multiple menus.
+- Profiles that bind to multiple note types, carry text/image/speech provider choices, and keep the run dialog in sync with the configuration manager.
 - A global configuration manager (`config_manager_dialog.py`) plus menu integration in both the card browser and the Anki Tools/Add-on settings flows.
 - Contributor documentation (`AGENTS.md`) outlining repository structure, coding practices, and review expectations.
 
@@ -22,14 +22,21 @@ Compared with the upstream project, this fork adds:
 
 - This plugin allows you to use Large Language Models (LLMs) to add information to your Anki flashcards using the power of AI.
 - Supports Claude (Anthropic), ChatGPT (OpenAI), Gemini (Google), and Deepseek models.
-- Optional text-to-speech pipeline that fills audio fields with `[sound:]` tags generated via OpenAI.
+- Optional text-to-speech pipeline that fills audio fields with `[sound:]` tags generated via OpenAI or Gemini TTS.
 - Completely free! (You create your own API key and pay for LLM usage)
 
 ## Quickstart:
 1. Install this plugin. (Open Anki. Tools -> Add-ons -> Get Addons -> Enter code: 643253121)
 1. In the Card Browser, select the cards you want to modify (tip: Shift+Click to select many or Ctrl+A to select all)
 1. You have a new menu option: Anki AI -> Update Your Flashcards with AI
-1. Enter your API key and the required prompts.
+1. Pick the configuration you want to run (or click **Manage…** to edit profiles), then review the prompts/mappings before launching.
+
+### Configuration Profiles
+
+- Open **Manage…** from the run window (or Tools → Anki AI → Manage Configurations) to edit profiles stored in `config.json`.
+- Each profile can target specific note types. When selected cards fall outside the active profile, the run dialog and a warning popup prompt you to switch before generating content.
+- Text, image, and speech generation now store separate provider/model choices. Use the drop-downs inside each section to pick OpenAI, Anthropic, Gemini, DeepSeek, or a custom endpoint.
+- The runtime dialog reuses the same sections as the configuration manager—retry policy, text mappings, image prompts, and speech prompts—so what you preview while editing is exactly what you run.
 
 ## Detailed Setup:
 

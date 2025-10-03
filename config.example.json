@@ -5,20 +5,28 @@
   "configs": [
     {
       "name": "Default",
+      "note_type_ids": [],
+      "text_provider": "custom",
       "endpoint": "",
       "api_key": "",
       "model": "",
+      "text_custom_value": "",
+      "text_provider_api_keys": {},
       "system_prompt": "",
       "user_prompt": "",
       "response_keys": [],
       "destination_fields": [],
       "text_mapping_entries": [],
+      "image_provider": "custom",
       "image_prompt_mappings": [],
       "image_api_key": "",
+      "image_provider_api_keys": {},
       "image_endpoint": "",
       "image_model": "",
+      "audio_provider": "custom",
       "audio_prompt_mappings": [],
       "audio_api_key": "",
+      "audio_provider_api_keys": {},
       "audio_endpoint": "",
       "audio_model": "",
       "audio_voice": "",
@@ -31,9 +39,15 @@
     },
     {
       "name": "openai/gpt-4o-mini",
+      "note_type_ids": [],
+      "text_provider": "openai",
       "endpoint": "https://api.openai.com/v1/chat/completions",
       "api_key": "sk-your-openai-key",
       "model": "gpt-4o-mini",
+      "text_custom_value": "",
+      "text_provider_api_keys": {
+        "openai": "sk-your-openai-key"
+      },
       "system_prompt": "You are a helpful language-learning assistant...",
       "user_prompt": "Target word: {_word}\nOriginal sentence (optional): {_sentenceOrig}",
       "response_keys": [
@@ -75,17 +89,25 @@
         { "key": "notes", "field": "_notes", "enabled": true },
         { "key": "imagePrompt", "field": "_imagePrompt", "enabled": true }
       ],
+      "image_provider": "gemini",
       "image_prompt_mappings": [
         "_imagePrompt->_image::1"
       ],
       "image_api_key": "your-gemini-key",
+      "image_provider_api_keys": {
+        "gemini": "your-gemini-key"
+      },
       "image_endpoint": "https://generativelanguage.googleapis.com/v1beta/images:generate",
       "image_model": "models/gemini-2.0-flash-image",
+      "audio_provider": "gemini",
       "audio_prompt_mappings": [
         "_word->_wordAudio::1",
         "_sentenceOrig->_sentenceAudio::1"
       ],
       "audio_api_key": "your-gemini-key",
+      "audio_provider_api_keys": {
+        "gemini": "your-gemini-key"
+      },
       "audio_endpoint": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent",
       "audio_model": "models/gemini-2.0-flash-tts",
       "audio_voice": "Alloy",

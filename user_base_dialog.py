@@ -1,568 +1,550 @@
+"""Unified runtime configuration panel matching the config manager layout."""
+
+from __future__ import annotations
+
 import json
-from abc import ABCMeta, abstractmethod
+from typing import Iterable, Sequence
 
 from anki.notes import Note as AnkiNote
-from aqt.qt import (
-    QSettings,
-    QWidget,
-    QHBoxLayout,
+from aqt.qt import QSettings
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QFormLayout,
+    QLabel,
+    QLineEdit,
     QMessageBox,
-    QVBoxLayout,
-    Qt,
+    QPushButton,
+    QTextEdit,
     QScrollArea,
-    QCheckBox,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6 import QtCore
 
+from .mapping_sections import GenerationSection, RetrySection, ToggleMappingEditor
+from .provider_options import (
+    AUDIO_PROVIDERS,
+    AUDIO_PROVIDER_DEFAULTS,
+    IMAGE_PROVIDERS,
+    IMAGE_PROVIDER_DEFAULTS,
+    TEXT_PROVIDERS,
+    TEXT_PROVIDER_DEFAULTS,
+)
 from .settings import SettingsNames
-from .two_col_layout import DynamicForm, ImageMappingForm, AudioMappingForm
-from .ui_tools import UITools
-from .gemini_client import GeminiClient
-
-
-# I think I should have:
-# - something generic that adds menubar things
-# - something generic that loads settings
-# - ideally something generic-ish that passes information through
-# - an action-custom dialog
-
-
-class MyMeta(ABCMeta, type(QtCore.QObject)):
-    pass
-
 
 IMAGE_MAPPING_SEPARATOR = "->"
 
 
-class UserBaseDialog(QWidget, metaclass=MyMeta):
+class UserBaseDialog(QWidget):
+    """Runtime editor that mirrors the configuration manager sections."""
+
     def __init__(self, app_settings: QSettings, selected_notes: list[AnkiNote]):
         super().__init__()
-        self._width = 500
-        self.app_settings: QSettings = app_settings
+        self.app_settings = app_settings
         self.selected_notes = selected_notes
-        self.ui_tools: UITools = UITools(app_settings, self._width)
-        self.image_mapping_form: ImageMappingForm | None = None
-        self.audio_mapping_form: AudioMappingForm | None = None
-        self._audio_api_key_entry = None
-        self._audio_endpoint_entry = None
-        self._audio_model_entry = None
-        self._audio_voice_entry = None
-        self._audio_format_entry = None
-        self._text_generation_checkbox: QCheckBox | None = None
-        self._image_generation_checkbox: QCheckBox | None = None
-        self._audio_generation_checkbox: QCheckBox | None = None
-        self._retry_limit_entry = None
-        self._retry_delay_entry = None
-
-    def show(self):
-        if self.layout() is not None:
-            QWidget().setLayout(self.layout())  # Clears any existing layout
-        card_fields = sorted(
-            {field for note in self.selected_notes for field in note.keys()}
+        self.card_fields = sorted(
+            {field for note in selected_notes for field in note.keys()}
         )
+        self._build_ui()
+        self._load_from_settings()
 
-        self.resize(self._width * 2 + 20, 750)
-        container_widget = QWidget()
-        main_layout = QHBoxLayout(container_widget)
+    # UI -----------------------------------------------------------------
 
-        left_container = QWidget()
-        left_container.setMaximumWidth(self._width)
-        left_layout = QVBoxLayout()
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_container.setLayout(left_layout)
+    def _build_ui(self) -> None:
+        self.resize(900, 600)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
 
-        self.add_models_dropdown(left_layout)
-        self.add_api_key(left_layout)
-        self.add_system_prompt(
-            left_layout, self.system_prompt_description, self.system_prompt_placeholder
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        layout.addWidget(scroll)
+
+        container = QWidget()
+        scroll.setWidget(container)
+
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(16, 12, 16, 12)
+        container_layout.setSpacing(12)
+
+        self.selection_label = QLabel(
+            f"{len(self.selected_notes)} notes selected." if self.selected_notes else "No notes selected"
         )
-        left_layout.addStretch()
+        container_layout.addWidget(self.selection_label)
 
-        # Right Column
-        right_container = QWidget()
-        right_container.setMaximumWidth(self._width)
-        right_layout = QVBoxLayout()
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_container.setLayout(right_layout)
-        right_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.note_type_status = QLabel()
+        self.note_type_status.setWordWrap(True)
+        self.note_type_status.setStyleSheet("color: #c0392b;")
+        self.note_type_status.hide()
+        container_layout.addWidget(self.note_type_status)
 
-        # User Prompt
-        self.add_user_prompt(
-            right_layout, self.user_prompt_description, self.user_prompt_placeholder
+        self.retry_section = RetrySection()
+        container_layout.addWidget(self.retry_section)
+
+        # Text generation section -------------------------------------
+        self.text_mapping_editor = ToggleMappingEditor(
+            [],
+            left_placeholder="response key",
+            right_placeholder="destination field",
         )
-        # Available Fields
-        right_layout.addWidget(
-            self.ui_tools.create_descriptive_text(
-                f"Available fields: {', '.join(card_fields)}"
+        self.text_section = GenerationSection(
+            "Text generation",
+            "Enable text generation",
+            self.text_mapping_editor,
+            description="Map model response keys to the Anki fields to update.",
+        )
+        self.text_section.add_provider_selector(TEXT_PROVIDERS)
+        if self.text_section.provider_combo:
+            self.text_section.provider_combo.setEnabled(False)
+        if self.text_section.custom_model_input:
+            self.text_section.custom_model_input.setEnabled(False)
+        self.text_defaults_button = QPushButton("Restore defaults")
+        self.text_defaults_button.clicked.connect(
+            lambda: self._apply_text_provider_defaults(force=True)
+        )
+        self.text_section.add_provider_reset_button(self.text_defaults_button)
+        if self.text_section.provider_combo is not None:
+            self.text_section.provider_combo.currentIndexChanged.connect(
+                lambda _: self._update_text_reset_button()
+            )
+        self._update_text_reset_button()
+
+        text_creds_form = QFormLayout()
+        text_creds_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        self.api_key_input = QLineEdit()
+        self.api_key_input.setPlaceholderText("API key")
+        text_creds_form.addRow(QLabel("API Key:"), self.api_key_input)
+        self.endpoint_input = QLineEdit()
+        self.endpoint_input.setPlaceholderText("Endpoint (optional)")
+        text_creds_form.addRow(QLabel("Endpoint:"), self.endpoint_input)
+        self.model_input = QLineEdit()
+        self.model_input.setPlaceholderText("Model name")
+        text_creds_form.addRow(QLabel("Model:"), self.model_input)
+        self.text_section.add_form_layout(text_creds_form)
+
+        text_prompt_form = QFormLayout()
+        text_prompt_form.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow
+        )
+        self.system_prompt_input = QTextEdit()
+        self.system_prompt_input.setAcceptRichText(False)
+        self.system_prompt_input.setMinimumHeight(80)
+        text_prompt_form.addRow(QLabel("System Prompt:"), self.system_prompt_input)
+        self.user_prompt_input = QTextEdit()
+        self.user_prompt_input.setAcceptRichText(False)
+        self.user_prompt_input.setMinimumHeight(120)
+        text_prompt_form.addRow(QLabel("User Prompt:"), self.user_prompt_input)
+        self.text_section.add_form_layout(text_prompt_form)
+        container_layout.addWidget(self.text_section)
+
+        # Image generation section ------------------------------------
+        self.image_mapping_editor = ToggleMappingEditor(
+            [],
+            left_placeholder="prompt field",
+            right_placeholder="image field",
+        )
+        self.image_section = GenerationSection(
+            "Image generation",
+            "Enable image generation",
+            self.image_mapping_editor,
+            description="Map prompt fields to the target fields that should receive images.",
+        )
+        self.image_section.add_provider_selector(IMAGE_PROVIDERS)
+        if self.image_section.provider_combo:
+            self.image_section.provider_combo.setEnabled(False)
+        if self.image_section.custom_model_input:
+            self.image_section.custom_model_input.setEnabled(False)
+        self.image_defaults_button = QPushButton("Restore defaults")
+        self.image_defaults_button.clicked.connect(
+            lambda: self._apply_image_provider_defaults(force=True)
+        )
+        self.image_section.add_provider_reset_button(self.image_defaults_button)
+        if self.image_section.provider_combo is not None:
+            self.image_section.provider_combo.currentIndexChanged.connect(
+                lambda _: self._update_image_reset_button()
+            )
+        self._update_image_reset_button()
+
+        image_form = QFormLayout()
+        image_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        self.image_api_key_input = QLineEdit()
+        self.image_api_key_input.setPlaceholderText("Image API key")
+        image_form.addRow(QLabel("Image API Key:"), self.image_api_key_input)
+        self.image_endpoint_input = QLineEdit()
+        self.image_endpoint_input.setPlaceholderText("Image endpoint")
+        image_form.addRow(QLabel("Image Endpoint:"), self.image_endpoint_input)
+        self.image_model_input = QLineEdit()
+        self.image_model_input.setPlaceholderText("Image model")
+        image_form.addRow(QLabel("Image Model:"), self.image_model_input)
+        self.image_section.add_form_layout(image_form)
+        container_layout.addWidget(self.image_section)
+
+        # Speech generation section -----------------------------------
+        self.audio_mapping_editor = ToggleMappingEditor(
+            [],
+            left_placeholder="text field",
+            right_placeholder="audio field",
+        )
+        self.audio_section = GenerationSection(
+            "Speech generation",
+            "Enable speech generation",
+            self.audio_mapping_editor,
+            description="Map text fields to the fields that should receive [sound:] tags.",
+        )
+        self.audio_section.add_provider_selector(AUDIO_PROVIDERS)
+        if self.audio_section.provider_combo:
+            self.audio_section.provider_combo.setEnabled(False)
+        if self.audio_section.custom_model_input:
+            self.audio_section.custom_model_input.setEnabled(False)
+        self.audio_defaults_button = QPushButton("Restore defaults")
+        self.audio_defaults_button.clicked.connect(
+            lambda: self._apply_audio_provider_defaults(force=True)
+        )
+        self.audio_section.add_provider_reset_button(self.audio_defaults_button)
+        if self.audio_section.provider_combo is not None:
+            self.audio_section.provider_combo.currentIndexChanged.connect(
+                lambda _: self._update_audio_reset_button()
+            )
+        self._update_audio_reset_button()
+
+        audio_form = QFormLayout()
+        audio_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        self.audio_api_key_input = QLineEdit()
+        self.audio_api_key_input.setPlaceholderText("Speech API key")
+        audio_form.addRow(QLabel("Speech API Key:"), self.audio_api_key_input)
+        self.audio_endpoint_input = QLineEdit()
+        self.audio_endpoint_input.setPlaceholderText("Speech endpoint")
+        audio_form.addRow(QLabel("Speech Endpoint:"), self.audio_endpoint_input)
+        self.audio_model_input = QLineEdit()
+        self.audio_model_input.setPlaceholderText("Speech model")
+        audio_form.addRow(QLabel("Speech Model:"), self.audio_model_input)
+        self.audio_voice_input = QLineEdit()
+        self.audio_voice_input.setPlaceholderText("Voice preference")
+        audio_form.addRow(QLabel("Speech Voice:"), self.audio_voice_input)
+        self.audio_format_input = QLineEdit()
+        self.audio_format_input.setPlaceholderText("wav")
+        audio_form.addRow(QLabel("Speech Format:"), self.audio_format_input)
+        self.audio_section.add_form_layout(audio_form)
+        container_layout.addWidget(self.audio_section)
+
+        # Ensure mapping editors respond to enable toggles
+        self.text_section.enable_checkbox.stateChanged.connect(
+            lambda state: self.text_mapping_editor.set_global_enabled(
+                Qt.CheckState(state) == Qt.CheckState.Checked
+            )
+        )
+        self.image_section.enable_checkbox.stateChanged.connect(
+            lambda state: self.image_mapping_editor.set_global_enabled(
+                Qt.CheckState(state) == Qt.CheckState.Checked
+            )
+        )
+        self.audio_section.enable_checkbox.stateChanged.connect(
+            lambda state: self.audio_mapping_editor.set_global_enabled(
+                Qt.CheckState(state) == Qt.CheckState.Checked
             )
         )
 
-        # Destination Configuration
-        right_layout.addWidget(
-            self.ui_tools.create_label("Save the AI output to the Anki fields:")
+    # Data loading -----------------------------------------------------
+
+    def _load_from_settings(self) -> None:
+        retry_limit = int(
+            self.app_settings.value(
+                SettingsNames.RETRY_LIMIT_SETTING_NAME, defaultValue=50
+            )
+            or 50
         )
-        right_layout.addWidget(
-            self.ui_tools.create_descriptive_text(self.mapping_instruction_text)
+        retry_delay = float(
+            self.app_settings.value(
+                SettingsNames.RETRY_DELAY_SETTING_NAME, defaultValue=5.0
+            )
+            or 5.0
         )
-        text_rows = self._load_text_rows(card_fields)
-        self._text_generation_checkbox = QCheckBox("Generate all text fields")
-        self._text_generation_checkbox.setChecked(
-            self._get_bool_setting(
-                SettingsNames.ENABLE_TEXT_GENERATION_SETTING_NAME, default=True
+        self.retry_section.set_values(retry_limit, retry_delay)
+
+        enable_text = self._get_bool_setting(
+            SettingsNames.ENABLE_TEXT_GENERATION_SETTING_NAME, True
+        )
+        self.text_section.set_enabled(enable_text)
+        self.text_mapping_editor.set_global_enabled(enable_text)
+        text_rows = self._load_text_rows()
+        self.text_mapping_editor.set_entries(text_rows)
+
+        self.api_key_input.setText(
+            self.app_settings.value(SettingsNames.API_KEY_SETTING_NAME, type=str) or ""
+        )
+        self.endpoint_input.setText(
+            self.app_settings.value(SettingsNames.ENDPOINT_SETTING_NAME, type=str) or ""
+        )
+        self.model_input.setText(
+            self.app_settings.value(SettingsNames.MODEL_SETTING_NAME, type=str) or ""
+        )
+        self.system_prompt_input.setPlainText(
+            self.app_settings.value(SettingsNames.SYSTEM_PROMPT_SETTING_NAME, type=str)
+            or ""
+        )
+        self.user_prompt_input.setPlainText(
+            self.app_settings.value(SettingsNames.USER_PROMPT_SETTING_NAME, type=str)
+            or ""
+        )
+        text_provider = (
+            self.app_settings.value(SettingsNames.TEXT_PROVIDER_SETTING_NAME, type=str)
+            or "custom"
+        )
+        text_custom_value = (
+            self.app_settings.value(
+                SettingsNames.TEXT_PROVIDER_CUSTOM_VALUE_SETTING_NAME,
+                defaultValue="",
+                type=str,
+            )
+            or ""
+        )
+        self.text_section.set_provider(text_provider, text_custom_value)
+
+        enable_image = self._get_bool_setting(
+            SettingsNames.ENABLE_IMAGE_GENERATION_SETTING_NAME, True
+        )
+        self.image_section.set_enabled(enable_image)
+        self.image_mapping_editor.set_global_enabled(enable_image)
+        image_rows = self._decode_mapping_rows(
+            self.app_settings.value(
+                SettingsNames.IMAGE_MAPPING_SETTING_NAME, type="QStringList"
+            )
+            or []
+        )
+        self.image_mapping_editor.set_entries(image_rows)
+        self.image_api_key_input.setText(
+            self.app_settings.value(SettingsNames.IMAGE_API_KEY_SETTING_NAME, type=str)
+            or ""
+        )
+        self.image_endpoint_input.setText(
+            self.app_settings.value(SettingsNames.IMAGE_ENDPOINT_SETTING_NAME, type=str)
+            or ""
+        )
+        self.image_model_input.setText(
+            self.app_settings.value(SettingsNames.IMAGE_MODEL_SETTING_NAME, type=str)
+            or ""
+        )
+        image_provider = (
+            self.app_settings.value(SettingsNames.IMAGE_PROVIDER_SETTING_NAME, type=str)
+            or "custom"
+        )
+        self.image_section.set_provider(image_provider)
+
+        enable_audio = self._get_bool_setting(
+            SettingsNames.ENABLE_AUDIO_GENERATION_SETTING_NAME, True
+        )
+        self.audio_section.set_enabled(enable_audio)
+        self.audio_mapping_editor.set_global_enabled(enable_audio)
+        audio_rows = self._decode_mapping_rows(
+            self.app_settings.value(
+                SettingsNames.AUDIO_MAPPING_SETTING_NAME, type="QStringList"
+            )
+            or []
+        )
+        self.audio_mapping_editor.set_entries(audio_rows)
+        self.audio_api_key_input.setText(
+            self.app_settings.value(SettingsNames.AUDIO_API_KEY_SETTING_NAME, type=str)
+            or ""
+        )
+        self.audio_endpoint_input.setText(
+            self.app_settings.value(SettingsNames.AUDIO_ENDPOINT_SETTING_NAME, type=str)
+            or ""
+        )
+        self.audio_model_input.setText(
+            self.app_settings.value(SettingsNames.AUDIO_MODEL_SETTING_NAME, type=str)
+            or ""
+        )
+        self.audio_voice_input.setText(
+            self.app_settings.value(SettingsNames.AUDIO_VOICE_SETTING_NAME, type=str)
+            or ""
+        )
+        self.audio_format_input.setText(
+            self.app_settings.value(SettingsNames.AUDIO_FORMAT_SETTING_NAME, type=str)
+            or "wav"
+        )
+        audio_provider = (
+            self.app_settings.value(SettingsNames.AUDIO_PROVIDER_SETTING_NAME, type=str)
+            or "custom"
+        )
+        self.audio_section.set_provider(audio_provider)
+
+        self._update_text_reset_button()
+        self._update_image_reset_button()
+        self._update_audio_reset_button()
+
+    # Public helpers ---------------------------------------------------
+
+    def update_note_type_status(
+        self,
+        allowed_note_types: Sequence[str],
+        missing_note_types: Sequence[str],
+    ) -> None:
+        """Show a warning when selected notes are outside the config scope."""
+        if not missing_note_types:
+            self.note_type_status.hide()
+            return
+        allowed_text = ", ".join(allowed_note_types) if allowed_note_types else "none"
+        missing_text = ", ".join(missing_note_types)
+        self.note_type_status.setText(
+            (
+                "Selected notes include types not covered by this configuration: "
+                f"{missing_text}.\n"
+                f"Configured types: {allowed_text}"
             )
         )
-        right_layout.addWidget(self._text_generation_checkbox)
+        self.note_type_status.show()
 
-        self.two_col_form = DynamicForm(text_rows, card_fields)
-        self._text_generation_checkbox.stateChanged.connect(
-            self._on_text_generation_toggled
-        )
-        self.two_col_form.set_master_override(
-            self._text_generation_checkbox.isChecked()
-        )
-        right_layout.addWidget(self.two_col_form)
-
-        # Image Generation Mapping
-        right_layout.addWidget(
-            self.ui_tools.create_label("Image Generation Mapping:")
-        )
-        right_layout.addWidget(
-            self.ui_tools.create_descriptive_text(
-                "Map a prompt field to the field that should receive the generated image. When the prompt field contains text, the configured image model will be invoked and the resulting image will be saved into the mapped field."
-            )
-        )
-        self._image_generation_checkbox = QCheckBox("Generate all images")
-        self._image_generation_checkbox.setChecked(
-            self._get_bool_setting(
-                SettingsNames.ENABLE_IMAGE_GENERATION_SETTING_NAME, default=True
-            )
-        )
-        image_mapping_strings = self.app_settings.value(
-            SettingsNames.IMAGE_MAPPING_SETTING_NAME,
-            type="QStringList",
-        ) or []
-        image_rows = self._decode_mapping_rows(image_mapping_strings)
-        self.image_mapping_form = ImageMappingForm(image_rows, card_fields)
-        self._image_generation_checkbox.stateChanged.connect(
-            self._on_image_generation_toggled
-        )
-        self.image_mapping_form.set_master_override(
-            self._image_generation_checkbox.isChecked()
-        )
-        right_layout.addWidget(self._image_generation_checkbox)
-        right_layout.addWidget(self.image_mapping_form)
-
-        right_layout.addWidget(
-            self.ui_tools.create_label("Image Generation (optional):")
-        )
-        image_key_entry = self.ui_tools.create_text_entry(
-            SettingsNames.IMAGE_API_KEY_SETTING_NAME,
-            "Override Gemini API key for image generation"
-        )
-        right_layout.addWidget(image_key_entry)
-        self._image_api_key_entry = image_key_entry
-        default_endpoint = "https://generativelanguage.googleapis.com/v1beta/models"
-        image_endpoint_entry = self.ui_tools.create_text_entry(
-            SettingsNames.IMAGE_ENDPOINT_SETTING_NAME,
-            f"Custom image endpoint (default {default_endpoint})"
-        )
-        right_layout.addWidget(image_endpoint_entry)
-        image_model_entry = self.ui_tools.create_text_entry(
-            SettingsNames.IMAGE_MODEL_SETTING_NAME,
-            f"Image model name (default {GeminiClient.IMAGE_MODEL})"
-        )
-        if not image_model_entry.text().strip():
-            image_model_entry.setText(GeminiClient.IMAGE_MODEL)
-        right_layout.addWidget(image_model_entry)
-
-        right_layout.addWidget(
-            self.ui_tools.create_label("Speech Generation Mapping:")
-        )
-        right_layout.addWidget(
-            self.ui_tools.create_descriptive_text(
-                "Map the text field that should be spoken to the field that should receive the audio tag. The plugin reads the text from the first field, synthesizes speech, and writes only a [sound:] tag into the second field."
-            )
-        )
-        self._audio_generation_checkbox = QCheckBox("Generate all speech")
-        self._audio_generation_checkbox.setChecked(
-            self._get_bool_setting(
-                SettingsNames.ENABLE_AUDIO_GENERATION_SETTING_NAME, default=True
-            )
-        )
-        audio_mapping_strings = self.app_settings.value(
-            SettingsNames.AUDIO_MAPPING_SETTING_NAME,
-            type="QStringList",
-        ) or []
-        audio_rows = self._decode_mapping_rows(audio_mapping_strings)
-        self.audio_mapping_form = AudioMappingForm(audio_rows, card_fields)
-        self._audio_generation_checkbox.stateChanged.connect(
-            self._on_audio_generation_toggled
-        )
-        self.audio_mapping_form.set_master_override(
-            self._audio_generation_checkbox.isChecked()
-        )
-        right_layout.addWidget(self._audio_generation_checkbox)
-        right_layout.addWidget(self.audio_mapping_form)
-
-        right_layout.addWidget(
-            self.ui_tools.create_label("Speech Generation (optional):")
-        )
-        audio_key_entry = self.ui_tools.create_text_entry(
-            SettingsNames.AUDIO_API_KEY_SETTING_NAME,
-            "Speech API key (required for audio generation)"
-        )
-        right_layout.addWidget(audio_key_entry)
-        self._audio_api_key_entry = audio_key_entry
-
-        audio_endpoint_entry = self.ui_tools.create_text_entry(
-            SettingsNames.AUDIO_ENDPOINT_SETTING_NAME,
-            "Custom speech endpoint (optional)"
-        )
-        right_layout.addWidget(audio_endpoint_entry)
-        self._audio_endpoint_entry = audio_endpoint_entry
-
-        audio_model_entry = self.ui_tools.create_text_entry(
-            SettingsNames.AUDIO_MODEL_SETTING_NAME,
-            "Speech model name (optional)"
-        )
-        right_layout.addWidget(audio_model_entry)
-        self._audio_model_entry = audio_model_entry
-
-        audio_voice_entry = self.ui_tools.create_text_entry(
-            SettingsNames.AUDIO_VOICE_SETTING_NAME,
-            "Preferred voice or speaker id"
-        )
-        right_layout.addWidget(audio_voice_entry)
-        self._audio_voice_entry = audio_voice_entry
-
-        audio_format_entry = self.ui_tools.create_text_entry(
-            SettingsNames.AUDIO_FORMAT_SETTING_NAME,
-            "Audio format (wav or pcm)"
-        )
-        if not audio_format_entry.text().strip():
-            audio_format_entry.setText("wav")
-        right_layout.addWidget(audio_format_entry)
-        self._audio_format_entry = audio_format_entry
-
-        # Retry settings
-        right_layout.addWidget(self.ui_tools.create_label("Retry Attempts:"))
-        retry_limit_entry = self.ui_tools.create_text_entry(
-            SettingsNames.RETRY_LIMIT_SETTING_NAME,
-            "Number of retries (default 50)",
-        )
-        if not retry_limit_entry.text().strip():
-            retry_limit_entry.setText("50")
-        right_layout.addWidget(retry_limit_entry)
-        self._retry_limit_entry = retry_limit_entry
-
-        right_layout.addWidget(self.ui_tools.create_label("Retry Delay (seconds):"))
-        retry_delay_entry = self.ui_tools.create_text_entry(
-            SettingsNames.RETRY_DELAY_SETTING_NAME,
-            "Delay between retries (default 5)",
-        )
-        if not retry_delay_entry.text().strip():
-            retry_delay_entry.setText("5")
-        right_layout.addWidget(retry_delay_entry)
-        self._retry_delay_entry = retry_delay_entry
-
-        # Misc
-        right_layout.addWidget(
-            self.ui_tools.create_label(
-                f"{len(self.selected_notes)} cards selected. Modify cards?"
-            )
-        )
-
-        main_layout.addWidget(left_container)
-        main_layout.addWidget(right_container)
-
-        scroll_area = QScrollArea(self)
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setWidget(container_widget)
-
-        final_layout = QVBoxLayout(self)
-        final_layout.addWidget(scroll_area)
-        self.setLayout(final_layout)
-        return self
-
-    @property
-    @abstractmethod
-    def service_name(self):
-        """User friendly name of the service, e.g. 'OpenAI'"""
-
-    @property
-    @abstractmethod
-    def models(self) -> list[str]:
-        """Array of the names of the available models"""
-
-    @property
-    @abstractmethod
-    def system_prompt_description(self):
-        """User friendly description for the system prompt"""
-
-    @property
-    @abstractmethod
-    def system_prompt_placeholder(self):
-        """Optional placeholder text for the system prompt"""
-
-    @property
-    @abstractmethod
-    def user_prompt_description(self):
-        """User friendly description for the user prompt"""
-
-    @property
-    @abstractmethod
-    def user_prompt_placeholder(self):
-        """Optional placeholder text for the user prompt"""
-
-    @property
-    def mapping_instruction_text(self):
-        """User friendly description for the JSON key to Note field mapping instructions"""
-        return """
-        For each piece of information you told the AI to give you in the System Prompt, enter it here, and select the Field on your Card where you want to save it.<br><br>
-        <b>Example:</b> If you asked the AI for a German sentence and its translation, and your Anki Fields are <code>de_sentence</code> and <code>en_sentence</code>, enter:
-        <pre>exampleSentence de_sentence<br>translation en_sentence</pre>
-        """
-
-    def add_models_dropdown(self, layout):
-        layout.addWidget(self.ui_tools.create_label("Model Name:"))
-        layout.addWidget(
-            self.ui_tools.create_dropdown(SettingsNames.MODEL_SETTING_NAME, self.models)
-        )
-
-    def add_api_key(self, layout):
-        layout.addWidget(self.ui_tools.create_label(f"{self.service_name} API Key:"))
-        layout.addWidget(
-            self.ui_tools.create_text_entry(SettingsNames.API_KEY_SETTING_NAME)
-        )
-
-    def add_system_prompt(
-        self, layout, system_prompt_description, system_prompt_placeholder
-    ):
-        layout.addWidget(self.ui_tools.create_label("System Prompt:"))
-        layout.addWidget(
-            self.ui_tools.create_descriptive_text(system_prompt_description)
-        )
-        layout.addWidget(
-            self.ui_tools.create_text_edit(
-                SettingsNames.SYSTEM_PROMPT_SETTING_NAME,
-                system_prompt_placeholder,
-                max_height=350,
-            )
-        )
-
-    def add_user_prompt(self, layout, user_prompt_description, user_prompt_placeholder):
-        layout.addWidget(self.ui_tools.create_label("User Prompt:"))
-        layout.addWidget(self.ui_tools.create_descriptive_text(user_prompt_description))
-        layout.addWidget(
-            self.ui_tools.create_text_edit(
-                SettingsNames.USER_PROMPT_SETTING_NAME,
-                user_prompt_placeholder,
-                max_height=200,
-            )
-        )
+    # Acceptance -------------------------------------------------------
 
     def accept(self) -> bool:
-        """
-        Saves settings when user accepts. Returns False if invalid.
-        """
-        if not self.are_settings_valid():
+        if not self._validate():
             return False
-        self.ui_tools.save_settings()
-        keys, fields = self.two_col_form.get_inputs()
-        self.app_settings.setValue(SettingsNames.RESPONSE_KEYS_SETTING_NAME, keys)
+        self._persist()
+        return True
+
+    # Internal helpers -------------------------------------------------
+
+    def _validate(self) -> bool:
+        text_enabled = self.text_section.is_enabled()
+        image_enabled = self.image_section.is_enabled()
+        audio_enabled = self.audio_section.is_enabled()
+
+        if text_enabled and not self.api_key_input.text().strip():
+            self._show_error("Enter the API key before running the plugin.")
+            return False
+        if text_enabled and not self.user_prompt_input.toPlainText().strip():
+            self._show_error("Enter a user prompt before running the plugin.")
+            return False
+
+        text_rows = self.text_mapping_editor.get_entries()
+        has_text_mapping = any(key and field and enabled for key, field, enabled in text_rows)
+        if text_enabled and not has_text_mapping:
+            self._show_error("Configure at least one text mapping before running the plugin.")
+            return False
+
+        image_rows = self.image_mapping_editor.get_entries()
+        has_image_mapping = any(enabled and prompt and target for prompt, target, enabled in image_rows)
+        if image_enabled and has_image_mapping and not self.image_api_key_input.text().strip():
+            self._show_error("Enter the image API key before generating images.")
+            return False
+
+        audio_rows = self.audio_mapping_editor.get_entries()
+        has_audio_mapping = any(enabled and source and dest for source, dest, enabled in audio_rows)
+        if audio_enabled and has_audio_mapping and not self.audio_api_key_input.text().strip():
+            self._show_error("Enter the speech API key before generating audio.")
+            return False
+
+        retry_limit, retry_delay = self.retry_section.values()
+        if retry_limit <= 0:
+            self._show_error("Retry attempts must be greater than zero.")
+            return False
+        if retry_delay <= 0:
+            self._show_error("Retry delay must be greater than zero.")
+            return False
+        return True
+
+    def _persist(self) -> None:
+        retry_limit, retry_delay = self.retry_section.values()
+        self.app_settings.setValue(SettingsNames.RETRY_LIMIT_SETTING_NAME, retry_limit)
+        self.app_settings.setValue(SettingsNames.RETRY_DELAY_SETTING_NAME, retry_delay)
+
         self.app_settings.setValue(
-            SettingsNames.DESTINATION_FIELD_SETTING_NAME,
-            fields,
+            SettingsNames.API_KEY_SETTING_NAME, self.api_key_input.text().strip()
         )
-        all_text_rows = self.two_col_form.get_all_rows()
-        filtered_text_entries = [
-            row
-            for row in all_text_rows
-            if row.get("key") or row.get("field")
+        self.app_settings.setValue(
+            SettingsNames.ENDPOINT_SETTING_NAME, self.endpoint_input.text().strip()
+        )
+        self.app_settings.setValue(
+            SettingsNames.MODEL_SETTING_NAME, self.model_input.text().strip()
+        )
+        self.app_settings.setValue(
+            SettingsNames.SYSTEM_PROMPT_SETTING_NAME,
+            self.system_prompt_input.toPlainText().strip(),
+        )
+        self.app_settings.setValue(
+            SettingsNames.USER_PROMPT_SETTING_NAME,
+            self.user_prompt_input.toPlainText().strip(),
+        )
+
+        text_rows = self.text_mapping_editor.get_entries()
+        text_entries = [
+            {"key": key, "field": field, "enabled": enabled}
+            for key, field, enabled in text_rows
+            if key or field
         ]
+        response_keys = [key for key, field, enabled in text_rows if enabled and key and field]
+        destination_fields = [field for key, field, enabled in text_rows if enabled and key and field]
         self.app_settings.setValue(
             SettingsNames.TEXT_MAPPING_ENTRIES_SETTING_NAME,
-            json.dumps(filtered_text_entries, ensure_ascii=False),
+            json.dumps(text_entries, ensure_ascii=False),
         )
-        if self._text_generation_checkbox is not None:
-            self.app_settings.setValue(
-                SettingsNames.ENABLE_TEXT_GENERATION_SETTING_NAME,
-                self._text_generation_checkbox.isChecked(),
-            )
+        self.app_settings.setValue(
+            SettingsNames.RESPONSE_KEYS_SETTING_NAME,
+            response_keys,
+        )
+        self.app_settings.setValue(
+            SettingsNames.DESTINATION_FIELD_SETTING_NAME,
+            destination_fields,
+        )
+        self.app_settings.setValue(
+            SettingsNames.ENABLE_TEXT_GENERATION_SETTING_NAME,
+            self.text_section.is_enabled(),
+        )
 
-        image_mapping_strings: list[str] = []
-        if self.image_mapping_form is not None:
-            all_image_rows = self.image_mapping_form.get_all_rows()
-            image_mapping_strings = [
-                self._encode_mapping_entry(prompt, target, enabled)
-                for prompt, target, enabled in all_image_rows
-                if prompt and target
-            ]
         self.app_settings.setValue(
             SettingsNames.IMAGE_MAPPING_SETTING_NAME,
-            image_mapping_strings,
+            self._encode_mapping_entries(self.image_mapping_editor.get_entries()),
         )
-        if self._image_generation_checkbox is not None:
-            self.app_settings.setValue(
-                SettingsNames.ENABLE_IMAGE_GENERATION_SETTING_NAME,
-                self._image_generation_checkbox.isChecked(),
-            )
+        self.app_settings.setValue(
+            SettingsNames.IMAGE_API_KEY_SETTING_NAME,
+            self.image_api_key_input.text().strip(),
+        )
+        self.app_settings.setValue(
+            SettingsNames.IMAGE_ENDPOINT_SETTING_NAME,
+            self.image_endpoint_input.text().strip(),
+        )
+        self.app_settings.setValue(
+            SettingsNames.IMAGE_MODEL_SETTING_NAME,
+            self.image_model_input.text().strip(),
+        )
+        self.app_settings.setValue(
+            SettingsNames.ENABLE_IMAGE_GENERATION_SETTING_NAME,
+            self.image_section.is_enabled(),
+        )
 
-        audio_mapping_strings: list[str] = []
-        if self.audio_mapping_form is not None:
-            all_audio_rows = self.audio_mapping_form.get_all_rows()
-            audio_mapping_strings = [
-                self._encode_mapping_entry(prompt, target, enabled)
-                for prompt, target, enabled in all_audio_rows
-                if prompt and target
-            ]
         self.app_settings.setValue(
             SettingsNames.AUDIO_MAPPING_SETTING_NAME,
-            audio_mapping_strings,
+            self._encode_mapping_entries(self.audio_mapping_editor.get_entries()),
         )
-        if self._audio_generation_checkbox is not None:
-            self.app_settings.setValue(
-                SettingsNames.ENABLE_AUDIO_GENERATION_SETTING_NAME,
-                self._audio_generation_checkbox.isChecked(),
-            )
-        if self._retry_limit_entry is not None:
-            retry_limit = self._parse_int(str(self._retry_limit_entry.text()), default=50)
-            self.app_settings.setValue(
-                SettingsNames.RETRY_LIMIT_SETTING_NAME,
-                retry_limit,
-            )
-        if self._retry_delay_entry is not None:
-            retry_delay = self._parse_float(str(self._retry_delay_entry.text()), default=5.0)
-            self.app_settings.setValue(
-                SettingsNames.RETRY_DELAY_SETTING_NAME,
-                retry_delay,
-            )
-        return True
-
-    def are_settings_valid(self) -> bool:
-        """
-        Returns True if all required settings are present, False otherwise.
-        Displays an error dialog if some are missing.
-        """
-        settings = self.ui_tools.get_settings()
-        if (
-            SettingsNames.API_KEY_SETTING_NAME not in settings
-            or not settings[SettingsNames.API_KEY_SETTING_NAME]
-        ):
-            show_error_message("Please enter an API key.")
-            return False
-        text_enabled = (
-            self._text_generation_checkbox.isChecked()
-            if self._text_generation_checkbox is not None
-            else True
+        self.app_settings.setValue(
+            SettingsNames.AUDIO_API_KEY_SETTING_NAME,
+            self.audio_api_key_input.text().strip(),
         )
-        if text_enabled and (
-            SettingsNames.USER_PROMPT_SETTING_NAME not in settings
-            or not settings[SettingsNames.USER_PROMPT_SETTING_NAME]
-        ):
-            show_error_message("Please enter a prompt.")
-            return False
-
-        keys, fields = self.two_col_form.get_inputs()
-        if text_enabled and (len(keys) == 0 or len(fields) == 0):
-            show_error_message("You must save at least one AI Output to one Field.")
-            return False
-
-        if self._retry_limit_entry is not None:
-            retry_limit = self._parse_int(str(self._retry_limit_entry.text()), default=50)
-            if retry_limit <= 0:
-                show_error_message("Retry attempts must be a positive integer.")
-                return False
-        if self._retry_delay_entry is not None:
-            retry_delay = self._parse_float(str(self._retry_delay_entry.text()), default=5.0)
-            if retry_delay <= 0:
-                show_error_message("Retry delay must be a positive number.")
-                return False
-
-        image_enabled = (
-            self._image_generation_checkbox.isChecked()
-            if self._image_generation_checkbox is not None
-            else True
+        self.app_settings.setValue(
+            SettingsNames.AUDIO_ENDPOINT_SETTING_NAME,
+            self.audio_endpoint_input.text().strip(),
         )
-        has_image_mapping = bool(
-            image_enabled
-            and self.image_mapping_form
-            and self.image_mapping_form.get_pairs()
+        self.app_settings.setValue(
+            SettingsNames.AUDIO_MODEL_SETTING_NAME,
+            self.audio_model_input.text().strip(),
         )
-        if has_image_mapping:
-            api_key = ""
-            if self._image_api_key_entry is not None:
-                api_key = self._image_api_key_entry.text().strip()
-            if not api_key:
-                show_error_message(
-                    "Enter the image generation API key before running the plugin."
-                )
-                return False
-
-        audio_enabled = (
-            self._audio_generation_checkbox.isChecked()
-            if self._audio_generation_checkbox is not None
-            else True
+        self.app_settings.setValue(
+            SettingsNames.AUDIO_VOICE_SETTING_NAME,
+            self.audio_voice_input.text().strip(),
         )
-        has_audio_mapping = bool(
-            audio_enabled
-            and self.audio_mapping_form
-            and self.audio_mapping_form.get_pairs()
+        self.app_settings.setValue(
+            SettingsNames.AUDIO_FORMAT_SETTING_NAME,
+            self.audio_format_input.text().strip() or "wav",
         )
-        if has_audio_mapping:
-            audio_key = ""
-            if self._audio_api_key_entry is not None:
-                audio_key = self._audio_api_key_entry.text().strip()
-            if not audio_key:
-                show_error_message(
-                    "Enter the speech generation API key before running the plugin."
-                )
-                return False
+        self.app_settings.setValue(
+            SettingsNames.ENABLE_AUDIO_GENERATION_SETTING_NAME,
+            self.audio_section.is_enabled(),
+        )
 
-        return True
-
-    def _on_text_generation_toggled(self, state: int) -> None:
-        if self.two_col_form is not None:
-            checked = Qt.CheckState(state) == Qt.CheckState.Checked
-            self.two_col_form.set_master_override(checked)
-
-    def _on_image_generation_toggled(self, state: int) -> None:
-        if self.image_mapping_form is not None:
-            checked = Qt.CheckState(state) == Qt.CheckState.Checked
-            self.image_mapping_form.set_master_override(checked)
-
-    def _on_audio_generation_toggled(self, state: int) -> None:
-        if self.audio_mapping_form is not None:
-            checked = Qt.CheckState(state) == Qt.CheckState.Checked
-            self.audio_mapping_form.set_master_override(checked)
-
-    def _get_bool_setting(self, name: str, default: bool = True) -> bool:
-        value = self.app_settings.value(name, defaultValue=default)
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, str):
-            return value.lower() in {"1", "true", "yes"}
-        return bool(value)
-
-    def _load_text_rows(self, card_fields: list[str]) -> list[tuple[str, str, bool]]:
+    def _load_text_rows(self) -> list[tuple[str, str, bool]]:
         raw_entries = self.app_settings.value(
             SettingsNames.TEXT_MAPPING_ENTRIES_SETTING_NAME,
             type=str,
         )
-        rows: list[tuple[str, str, bool]] = []
-        if raw_entries:
-            try:
-                data = json.loads(raw_entries)
-                for entry in data:
-                    if not isinstance(entry, dict):
-                        continue
-                    key = str(entry.get("key", "")).strip()
-                    field = str(entry.get("field", "")).strip()
-                    enabled = bool(entry.get("enabled", True))
-                    rows.append((key, field, enabled))
-            except (json.JSONDecodeError, TypeError):
-                rows = []
-        if not rows:
+        if not raw_entries:
             keys = self.app_settings.value(
                 SettingsNames.RESPONSE_KEYS_SETTING_NAME, type="QStringList"
             ) or []
@@ -570,59 +552,152 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
                 SettingsNames.DESTINATION_FIELD_SETTING_NAME, type="QStringList"
             ) or []
             if keys and fields and len(keys) == len(fields):
-                rows = [(key, field, True) for key, field in zip(keys, fields)]
-        return rows
+                return [(str(k), str(f), True) for k, f in zip(keys, fields)]
+            return []
+        try:
+            data = json.loads(raw_entries)
+        except (json.JSONDecodeError, TypeError):
+            return []
+        entries: list[tuple[str, str, bool]] = []
+        for entry in data:
+            if not isinstance(entry, dict):
+                continue
+            key = str(entry.get("key", "")).strip()
+            field = str(entry.get("field", "")).strip()
+            enabled = bool(entry.get("enabled", True))
+            entries.append((key, field, enabled))
+        return entries
+
+    def _apply_text_provider_defaults(self, *, force: bool = False) -> None:
+        combo = self.text_section.provider_combo
+        if combo is None:
+            return
+        provider = combo.currentData()
+        if provider is None:
+            return
+        provider_key = str(provider).lower()
+        defaults = TEXT_PROVIDER_DEFAULTS.get(provider_key)
+        if not defaults:
+            return
+        endpoint_default = defaults.get("endpoint", "")
+        model_default = defaults.get("model", "")
+        if endpoint_default and (force or not self.endpoint_input.text().strip()):
+            self.endpoint_input.setText(endpoint_default)
+        if model_default and (force or not self.model_input.text().strip()):
+            self.model_input.setText(model_default)
+        self._update_text_reset_button()
+
+    def _apply_image_provider_defaults(self, *, force: bool = False) -> None:
+        combo = self.image_section.provider_combo
+        if combo is None:
+            return
+        provider = combo.currentData()
+        if provider is None:
+            return
+        provider_key = str(provider).lower()
+        defaults = IMAGE_PROVIDER_DEFAULTS.get(provider_key)
+        if not defaults:
+            return
+        endpoint_default = defaults.get("endpoint", "")
+        model_default = defaults.get("model", "")
+        if endpoint_default and (force or not self.image_endpoint_input.text().strip()):
+            self.image_endpoint_input.setText(endpoint_default)
+        if model_default and (force or not self.image_model_input.text().strip()):
+            self.image_model_input.setText(model_default)
+        self._update_image_reset_button()
+
+    def _apply_audio_provider_defaults(self, *, force: bool = False) -> None:
+        combo = self.audio_section.provider_combo
+        if combo is None:
+            return
+        provider = combo.currentData()
+        if provider is None:
+            return
+        provider_key = str(provider).lower()
+        defaults = AUDIO_PROVIDER_DEFAULTS.get(provider_key)
+        if not defaults:
+            return
+        endpoint_default = defaults.get("endpoint", "")
+        model_default = defaults.get("model", "")
+        if endpoint_default and (force or not self.audio_endpoint_input.text().strip()):
+            self.audio_endpoint_input.setText(endpoint_default)
+        if model_default and (force or not self.audio_model_input.text().strip()):
+            self.audio_model_input.setText(model_default)
+        self._update_audio_reset_button()
+
+    def _update_text_reset_button(self) -> None:
+        enabled = False
+        if self.text_section.provider_combo is not None:
+            provider = self.text_section.provider_combo.currentData()
+            if provider is not None:
+                enabled = str(provider).lower() in TEXT_PROVIDER_DEFAULTS
+        self.text_defaults_button.setEnabled(enabled)
+
+    def _update_image_reset_button(self) -> None:
+        enabled = False
+        if self.image_section.provider_combo is not None:
+            provider = self.image_section.provider_combo.currentData()
+            if provider is not None:
+                enabled = str(provider).lower() in IMAGE_PROVIDER_DEFAULTS
+        self.image_defaults_button.setEnabled(enabled)
+
+    def _update_audio_reset_button(self) -> None:
+        enabled = False
+        if self.audio_section.provider_combo is not None:
+            provider = self.audio_section.provider_combo.currentData()
+            if provider is not None:
+                enabled = str(provider).lower() in AUDIO_PROVIDER_DEFAULTS
+        self.audio_defaults_button.setEnabled(enabled)
 
     def _decode_mapping_rows(
-        self, entries: list[str]
+        self, entries: Iterable[str]
     ) -> list[tuple[str, str, bool]]:
-        rows: list[tuple[str, str, bool]] = []
+        decoded: list[tuple[str, str, bool]] = []
         for mapping in entries:
             if not isinstance(mapping, str) or IMAGE_MAPPING_SEPARATOR not in mapping:
                 continue
-            enabled = True
             base = mapping
+            enabled = True
             if "::" in mapping:
                 base, flag = mapping.rsplit("::", 1)
-                enabled = flag.strip() not in {"0", "false", "False"}
+                enabled = flag.strip().lower() not in {"0", "false", "no"}
             if IMAGE_MAPPING_SEPARATOR not in base:
                 continue
-            prompt, target = [
-                part.strip() for part in base.split(IMAGE_MAPPING_SEPARATOR, 1)
-            ]
-            if prompt or target:
-                rows.append((prompt, target, enabled))
-        return rows
+            left, right = [part.strip() for part in base.split(IMAGE_MAPPING_SEPARATOR, 1)]
+            if left or right:
+                decoded.append((left, right, enabled))
+        return decoded
+
+    def _encode_mapping_entries(
+        self, entries: Iterable[tuple[str, str, bool]]
+    ) -> list[str]:
+        encoded: list[str] = []
+        for left, right, enabled in entries:
+            if not left or not right:
+                continue
+            flag = "1" if enabled else "0"
+            encoded.append(f"{left}{IMAGE_MAPPING_SEPARATOR}{right}::{flag}")
+        return encoded
+
+    def _get_bool_setting(self, name: str, default: bool) -> bool:
+        value = self.app_settings.value(name, defaultValue=default)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.lower() in {"1", "true", "yes"}
+        return bool(value)
 
     @staticmethod
-    def _encode_mapping_entry(prompt: str, target: str, enabled: bool) -> str:
-        return (
-            f"{prompt}{IMAGE_MAPPING_SEPARATOR}{target}::"
-            f"{'1' if enabled else '0'}"
-        )
-
-    @staticmethod
-    def _parse_int(value: str, default: int) -> int:
-        try:
-            parsed = int(value.strip())
-            return parsed if parsed > 0 else default
-        except (ValueError, AttributeError):
-            return default
-
-    @staticmethod
-    def _parse_float(value: str, default: float) -> float:
-        try:
-            parsed = float(value.strip())
-            return parsed if parsed > 0 else default
-        except (ValueError, AttributeError):
-            return default
+    def _show_error(message: str) -> None:
+        msg_box = QMessageBox()
+        msg_box.setIcon(QMessageBox.Icon.Critical)
+        msg_box.setWindowTitle("Configuration error")
+        msg_box.setText(message)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg_box.exec()
 
 
-def show_error_message(message: str):
-    """Displays a popup with the message"""
-    msg_box = QMessageBox()
-    msg_box.setIcon(QMessageBox.Icon.Critical)
-    msg_box.setWindowTitle("Error")
-    msg_box.setText(message)
-    msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-    msg_box.exec()  # Display the message box
+__all__ = [
+    "UserBaseDialog",
+    "IMAGE_MAPPING_SEPARATOR",
+]

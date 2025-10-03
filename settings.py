@@ -17,15 +17,19 @@ class SettingsNames:
     LLM_CLIENT_NAME = "llm_client_name"
     CONFIG_NAME_SETTING_NAME = "config_name"
     MODEL_SETTING_NAME = "model"
+    TEXT_PROVIDER_SETTING_NAME = "text_provider"
+    TEXT_PROVIDER_CUSTOM_VALUE_SETTING_NAME = "text_provider_custom"
     SYSTEM_PROMPT_SETTING_NAME = "system_prompt"
     USER_PROMPT_SETTING_NAME = "user_prompt"
     RESPONSE_KEYS_SETTING_NAME = "response_keys"
     TEXT_MAPPING_ENTRIES_SETTING_NAME = "text_mapping_entries"
     IMAGE_MAPPING_SETTING_NAME = "image_prompt_mappings"
+    IMAGE_PROVIDER_SETTING_NAME = "image_provider"
     IMAGE_API_KEY_SETTING_NAME = "image_api_key"
     IMAGE_ENDPOINT_SETTING_NAME = "image_endpoint"
     IMAGE_MODEL_SETTING_NAME = "image_model"
     AUDIO_MAPPING_SETTING_NAME = "audio_prompt_mappings"
+    AUDIO_PROVIDER_SETTING_NAME = "audio_provider"
     AUDIO_API_KEY_SETTING_NAME = "audio_api_key"
     AUDIO_MODEL_SETTING_NAME = "audio_model"
     AUDIO_VOICE_SETTING_NAME = "audio_voice"
@@ -43,9 +47,12 @@ def get_settings() -> QSettings:
     settings = QSettings(SETTINGS_ORGANIZATION, SETTINGS_APPLICATION)
     client_name = settings.value(
         SettingsNames.LLM_CLIENT_NAME,
-        defaultValue="Claude",
+        defaultValue="Config",
         type=str,
     )
+    if client_name != "Config":
+        settings.setValue(SettingsNames.LLM_CLIENT_NAME, "Config")
+        client_name = "Config"
     settings.beginGroup(client_name)
     return settings, client_name
 

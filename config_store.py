@@ -12,19 +12,27 @@ class LLMConfig:
     """Data container for a single LLM configuration."""
 
     name: str
+    note_type_ids: List[str] = field(default_factory=list)
+    text_provider: str = "custom"
     endpoint: str = ""
     api_key: str = ""
     model: str = ""
+    text_custom_value: str = ""
+    text_provider_api_keys: Dict[str, str] = field(default_factory=dict)
     system_prompt: str = ""
     user_prompt: str = ""
     response_keys: List[str] = field(default_factory=list)
     destination_fields: List[str] = field(default_factory=list)
     image_prompt_mappings: List[str] = field(default_factory=list)
+    image_provider: str = "custom"
     image_api_key: str = ""
+    image_provider_api_keys: Dict[str, str] = field(default_factory=dict)
     image_endpoint: str = ""
     image_model: str = ""
     audio_prompt_mappings: List[str] = field(default_factory=list)
+    audio_provider: str = "custom"
     audio_api_key: str = ""
+    audio_provider_api_keys: Dict[str, str] = field(default_factory=dict)
     audio_endpoint: str = ""
     audio_model: str = ""
     audio_voice: str = ""
@@ -39,19 +47,27 @@ class LLMConfig:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "name": self.name,
+            "note_type_ids": list(self.note_type_ids),
+            "text_provider": self.text_provider,
             "endpoint": self.endpoint,
             "api_key": self.api_key,
             "model": self.model,
+            "text_custom_value": self.text_custom_value,
             "system_prompt": self.system_prompt,
             "user_prompt": self.user_prompt,
+            "text_provider_api_keys": dict(self.text_provider_api_keys),
             "response_keys": self.response_keys,
             "destination_fields": self.destination_fields,
             "image_prompt_mappings": self.image_prompt_mappings,
+            "image_provider": self.image_provider,
             "image_api_key": self.image_api_key,
+            "image_provider_api_keys": dict(self.image_provider_api_keys),
             "image_endpoint": self.image_endpoint,
             "image_model": self.image_model,
             "audio_prompt_mappings": self.audio_prompt_mappings,
+            "audio_provider": self.audio_provider,
             "audio_api_key": self.audio_api_key,
+            "audio_provider_api_keys": dict(self.audio_provider_api_keys),
             "audio_endpoint": self.audio_endpoint,
             "audio_model": self.audio_model,
             "audio_voice": self.audio_voice,
@@ -68,19 +84,27 @@ class LLMConfig:
     def from_dict(cls, data: Dict[str, Any]) -> "LLMConfig":
         return cls(
             name=data.get("name", "Unnamed"),
+            note_type_ids=list(data.get("note_type_ids", [])),
+            text_provider=data.get("text_provider", "custom"),
             endpoint=data.get("endpoint", ""),
             api_key=data.get("api_key", ""),
             model=data.get("model", ""),
+            text_custom_value=data.get("text_custom_value", ""),
+            text_provider_api_keys=dict(data.get("text_provider_api_keys", {})),
             system_prompt=data.get("system_prompt", ""),
             user_prompt=data.get("user_prompt", ""),
             response_keys=list(data.get("response_keys", [])),
             destination_fields=list(data.get("destination_fields", [])),
             image_prompt_mappings=list(data.get("image_prompt_mappings", [])),
+            image_provider=data.get("image_provider", "custom"),
             image_api_key=data.get("image_api_key", ""),
+            image_provider_api_keys=dict(data.get("image_provider_api_keys", {})),
             image_endpoint=data.get("image_endpoint", ""),
             image_model=data.get("image_model", ""),
             audio_prompt_mappings=list(data.get("audio_prompt_mappings", [])),
+            audio_provider=data.get("audio_provider", "custom"),
             audio_api_key=data.get("audio_api_key", ""),
+            audio_provider_api_keys=dict(data.get("audio_provider_api_keys", {})),
             audio_endpoint=data.get("audio_endpoint", ""),
             audio_model=data.get("audio_model", ""),
             audio_voice=data.get("audio_voice", ""),
