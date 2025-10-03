@@ -1,7 +1,7 @@
 {
   // Recommended text models: gpt-4o (OpenAI), gpt-4o-mini (OpenAI), claude-3.5-sonnet (Anthropic)
-  // Recommended image models: gpt-image-1 (OpenAI), dall-e-3 (OpenAI), gemini-1.5-pro-vision (Google)
-  // Recommended speech models: gpt-4o-mini-tts (OpenAI), whisper-1 (OpenAI), gemini-1.5-pro with audio (Google)
+  // Recommended image models: gemini-2.0-flash-image (Google), dalle-3 (OpenAI)
+  // Recommended speech models: gemini-2.0-flash-tts (Google)
   "configs": [
     {
       "name": "Default",
@@ -25,7 +25,76 @@
       "audio_format": "wav",
       "enable_text_generation": true,
       "enable_image_generation": true,
-      "enable_audio_generation": true
+      "enable_audio_generation": true,
+      "retry_limit": 50,
+      "retry_delay": 5.0
+    },
+    {
+      "name": "openai/gpt-4o-mini",
+      "endpoint": "https://api.openai.com/v1/chat/completions",
+      "api_key": "sk-your-openai-key",
+      "model": "gpt-4o-mini",
+      "system_prompt": "You are a helpful language-learning assistant...",
+      "user_prompt": "Target word: {_word}\nOriginal sentence (optional): {_sentenceOrig}",
+      "response_keys": [
+        "phonType",
+        "phonetic",
+        "sentenceMarked",
+        "wordTran",
+        "sentenceOrig",
+        "definition",
+        "sentenceTran",
+        "examplesOrig",
+        "examplesTran",
+        "notes",
+        "imagePrompt"
+      ],
+      "destination_fields": [
+        "_phonType",
+        "_phonetic",
+        "_sentenceMarked",
+        "_wordTran",
+        "_sentenceOrig",
+        "_definition",
+        "_sentenceTran",
+        "_examplesOrig",
+        "_examplesTran",
+        "_notes",
+        "_imagePrompt"
+      ],
+      "text_mapping_entries": [
+        { "key": "phonType", "field": "_phonType", "enabled": true },
+        { "key": "phonetic", "field": "_phonetic", "enabled": true },
+        { "key": "sentenceMarked", "field": "_sentenceMarked", "enabled": true },
+        { "key": "wordTran", "field": "_wordTran", "enabled": true },
+        { "key": "sentenceOrig", "field": "_sentenceOrig", "enabled": true },
+        { "key": "definition", "field": "_definition", "enabled": true },
+        { "key": "sentenceTran", "field": "_sentenceTran", "enabled": true },
+        { "key": "examplesOrig", "field": "_examplesOrig", "enabled": true },
+        { "key": "examplesTran", "field": "_examplesTran", "enabled": true },
+        { "key": "notes", "field": "_notes", "enabled": true },
+        { "key": "imagePrompt", "field": "_imagePrompt", "enabled": true }
+      ],
+      "image_prompt_mappings": [
+        "_imagePrompt->_image::1"
+      ],
+      "image_api_key": "your-gemini-key",
+      "image_endpoint": "https://generativelanguage.googleapis.com/v1beta/images:generate",
+      "image_model": "models/gemini-2.0-flash-image",
+      "audio_prompt_mappings": [
+        "_word->_wordAudio::1",
+        "_sentenceOrig->_sentenceAudio::1"
+      ],
+      "audio_api_key": "your-gemini-key",
+      "audio_endpoint": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent",
+      "audio_model": "models/gemini-2.0-flash-tts",
+      "audio_voice": "Alloy",
+      "audio_format": "wav",
+      "enable_text_generation": true,
+      "enable_image_generation": true,
+      "enable_audio_generation": true,
+      "retry_limit": 50,
+      "retry_delay": 3.0
     }
   ]
 }

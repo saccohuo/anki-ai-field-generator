@@ -51,6 +51,8 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
         self._text_generation_checkbox: QCheckBox | None = None
         self._image_generation_checkbox: QCheckBox | None = None
         self._audio_generation_checkbox: QCheckBox | None = None
+        self._retry_limit_entry = None
+        self._retry_delay_entry = None
 
     def show(self):
         if self.layout() is not None:
@@ -103,7 +105,7 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
             self.ui_tools.create_descriptive_text(self.mapping_instruction_text)
         )
         text_rows = self._load_text_rows(card_fields)
-        self._text_generation_checkbox = QCheckBox("Generate text fields")
+        self._text_generation_checkbox = QCheckBox("Generate all text fields")
         self._text_generation_checkbox.setChecked(
             self._get_bool_setting(
                 SettingsNames.ENABLE_TEXT_GENERATION_SETTING_NAME, default=True
@@ -129,7 +131,7 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
                 "Map a prompt field to the field that should receive the generated image. When the prompt field contains text, the configured image model will be invoked and the resulting image will be saved into the mapped field."
             )
         )
-        self._image_generation_checkbox = QCheckBox("Generate images")
+        self._image_generation_checkbox = QCheckBox("Generate all images")
         self._image_generation_checkbox.setChecked(
             self._get_bool_setting(
                 SettingsNames.ENABLE_IMAGE_GENERATION_SETTING_NAME, default=True
@@ -181,7 +183,7 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
                 "Map the text field that should be spoken to the field that should receive the audio tag. The plugin reads the text from the first field, synthesizes speech, and writes only a [sound:] tag into the second field."
             )
         )
-        self._audio_generation_checkbox = QCheckBox("Generate speech")
+        self._audio_generation_checkbox = QCheckBox("Generate all speech")
         self._audio_generation_checkbox.setChecked(
             self._get_bool_setting(
                 SettingsNames.ENABLE_AUDIO_GENERATION_SETTING_NAME, default=True
@@ -241,6 +243,27 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
             audio_format_entry.setText("wav")
         right_layout.addWidget(audio_format_entry)
         self._audio_format_entry = audio_format_entry
+
+        # Retry settings
+        right_layout.addWidget(self.ui_tools.create_label("Retry Attempts:"))
+        retry_limit_entry = self.ui_tools.create_text_entry(
+            SettingsNames.RETRY_LIMIT_SETTING_NAME,
+            "Number of retries (default 50)",
+        )
+        if not retry_limit_entry.text().strip():
+            retry_limit_entry.setText("50")
+        right_layout.addWidget(retry_limit_entry)
+        self._retry_limit_entry = retry_limit_entry
+
+        right_layout.addWidget(self.ui_tools.create_label("Retry Delay (seconds):"))
+        retry_delay_entry = self.ui_tools.create_text_entry(
+            SettingsNames.RETRY_DELAY_SETTING_NAME,
+            "Delay between retries (default 5)",
+        )
+        if not retry_delay_entry.text().strip():
+            retry_delay_entry.setText("5")
+        right_layout.addWidget(retry_delay_entry)
+        self._retry_delay_entry = retry_delay_entry
 
         # Misc
         right_layout.addWidget(
@@ -402,6 +425,18 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
                 SettingsNames.ENABLE_AUDIO_GENERATION_SETTING_NAME,
                 self._audio_generation_checkbox.isChecked(),
             )
+        if self._retry_limit_entry is not None:
+            retry_limit = self._parse_int(str(self._retry_limit_entry.text()), default=50)
+            self.app_settings.setValue(
+                SettingsNames.RETRY_LIMIT_SETTING_NAME,
+                retry_limit,
+            )
+        if self._retry_delay_entry is not None:
+            retry_delay = self._parse_float(str(self._retry_delay_entry.text()), default=5.0)
+            self.app_settings.setValue(
+                SettingsNames.RETRY_DELAY_SETTING_NAME,
+                retry_delay,
+            )
         return True
 
     def are_settings_valid(self) -> bool:
@@ -432,6 +467,17 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
         if text_enabled and (len(keys) == 0 or len(fields) == 0):
             show_error_message("You must save at least one AI Output to one Field.")
             return False
+
+        if self._retry_limit_entry is not None:
+            retry_limit = self._parse_int(str(self._retry_limit_entry.text()), default=50)
+            if retry_limit <= 0:
+                show_error_message("Retry attempts must be a positive integer.")
+                return False
+        if self._retry_delay_entry is not None:
+            retry_delay = self._parse_float(str(self._retry_delay_entry.text()), default=5.0)
+            if retry_delay <= 0:
+                show_error_message("Retry delay must be a positive number.")
+                return False
 
         image_enabled = (
             self._image_generation_checkbox.isChecked()
@@ -554,6 +600,22 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
             f"{prompt}{IMAGE_MAPPING_SEPARATOR}{target}::"
             f"{'1' if enabled else '0'}"
         )
+
+    @staticmethod
+    def _parse_int(value: str, default: int) -> int:
+        try:
+            parsed = int(value.strip())
+            return parsed if parsed > 0 else default
+        except (ValueError, AttributeError):
+            return default
+
+    @staticmethod
+    def _parse_float(value: str, default: float) -> float:
+        try:
+            parsed = float(value.strip())
+            return parsed if parsed > 0 else default
+        except (ValueError, AttributeError):
+            return default
 
 
 def show_error_message(message: str):

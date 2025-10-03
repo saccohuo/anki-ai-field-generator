@@ -31,6 +31,8 @@ class SettingsNames:
     AUDIO_VOICE_SETTING_NAME = "audio_voice"
     AUDIO_ENDPOINT_SETTING_NAME = "audio_endpoint"
     AUDIO_FORMAT_SETTING_NAME = "audio_format"
+    RETRY_LIMIT_SETTING_NAME = "retry_limit"
+    RETRY_DELAY_SETTING_NAME = "retry_delay"
     ENABLE_TEXT_GENERATION_SETTING_NAME = "enable_text_generation"
     ENABLE_IMAGE_GENERATION_SETTING_NAME = "enable_image_generation"
     ENABLE_AUDIO_GENERATION_SETTING_NAME = "enable_audio_generation"

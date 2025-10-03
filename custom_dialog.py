@@ -242,6 +242,18 @@ class CustomDialog(UserBaseDialog):
             self.two_col_form.set_master_override(
                 self._text_generation_checkbox.isChecked()
             )
+        if self._retry_limit_entry is not None:
+            self._retry_limit_entry.setText(str(config.retry_limit or 50))
+            self.app_settings.setValue(
+                SettingsNames.RETRY_LIMIT_SETTING_NAME,
+                config.retry_limit or 50,
+            )
+        if self._retry_delay_entry is not None:
+            self._retry_delay_entry.setText(str(config.retry_delay or 5.0))
+            self.app_settings.setValue(
+                SettingsNames.RETRY_DELAY_SETTING_NAME,
+                config.retry_delay or 5.0,
+            )
 
     def _set_setting(self, setting_name: str, value: str) -> None:
         widget = self.ui_tools.widgets.get(setting_name)
@@ -317,6 +329,14 @@ class CustomDialog(UserBaseDialog):
                 self._audio_generation_checkbox.isChecked()
                 if self._audio_generation_checkbox is not None
                 else True
+            ),
+            retry_limit=self._parse_int(
+                self._retry_limit_entry.text() if self._retry_limit_entry else "",
+                default=50,
+            ),
+            retry_delay=self._parse_float(
+                self._retry_delay_entry.text() if self._retry_delay_entry else "",
+                default=5.0,
             ),
         )
         if self._active_config_name and self._active_config_name != config.name:

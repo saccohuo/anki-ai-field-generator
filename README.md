@@ -145,6 +145,7 @@ Use the <em>Speech Generation Mapping</em> section in the settings dialog to map
 - Gemini 语音接口目前仅返回 24kHz 线性 PCM，我们会自动封装为 <code>.wav</code> 文件；请把音频格式字段设置为 <code>wav</code>（或留空，插件会回落到 <code>wav</code>）。
 - The first field in each mapping provides the text to be spoken; the second field receives only the generated <code>[sound:...]</code> tag.
 - Existing field contents are preserved; the new audio tag is appended on a new line if needed.
+- Advanced: 在 Settings 底部可以设置 “Retry Attempts” 与 “Retry Delay (seconds)”（默认 50 / 5），用于控制文本、图片、语音阶段的自动重试策略。
 
 <details>
 <summary><b>Gemini 2.5 预设音色（2025-09-30 更新）</b></summary>

@@ -142,20 +142,36 @@ class NoteProcessor(QThread):
         self.missing_field_is_error = missing_field_is_error
         self.current_index = 0
         self._gemini_image_client: Optional[GeminiClient] = None
-        self._retry_policies: dict[ErrorCode, RetryPolicy] = {
-            ErrorCode.CONNECTION: RetryPolicy(max_attempts=3, wait_seconds=5),
-            ErrorCode.RATE_LIMIT: RetryPolicy(max_attempts=4, wait_seconds=10),
-            ErrorCode.IMAGE_MISSING_DATA: RetryPolicy(max_attempts=3, wait_seconds=3),
-            ErrorCode.AUDIO_MISSING_DATA: RetryPolicy(max_attempts=3, wait_seconds=3),
-        }
-        self._enable_text_generation = generate_text and bool(self.response_keys)
-        self._enable_image_generation = generate_images and bool(
-            self.image_field_mappings
+        retry_limit = int(
+            settings.value(SettingsNames.RETRY_LIMIT_SETTING_NAME, defaultValue=50)
         )
+        retry_delay = float(
+            settings.value(SettingsNames.RETRY_DELAY_SETTING_NAME, defaultValue=5.0)
+        )
+        retry_limit = max(1, retry_limit)
+        retry_delay = max(0.5, retry_delay)
+        self._retry_policies: dict[ErrorCode, RetryPolicy] = {
+            ErrorCode.CONNECTION: RetryPolicy(
+                max_attempts=retry_limit,
+                wait_seconds=retry_delay,
+            ),
+            ErrorCode.RATE_LIMIT: RetryPolicy(
+                max_attempts=retry_limit,
+                wait_seconds=max(retry_delay * 2, retry_delay),
+            ),
+            ErrorCode.IMAGE_MISSING_DATA: RetryPolicy(
+                max_attempts=retry_limit,
+                wait_seconds=max(retry_delay, 1.0),
+            ),
+            ErrorCode.AUDIO_MISSING_DATA: RetryPolicy(
+                max_attempts=retry_limit,
+                wait_seconds=max(retry_delay, 1.0),
+            ),
+        }
+        self._enable_text_generation = bool(self.response_keys)
+        self._enable_image_generation = bool(self.image_field_mappings)
         self._enable_audio_generation = (
-            generate_audio
-            and bool(self.audio_field_mappings)
-            and speech_client is not None
+            bool(self.audio_field_mappings) and speech_client is not None
         )
         if not self._enable_audio_generation:
             self._speech_client = None

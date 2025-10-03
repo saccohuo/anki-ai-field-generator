@@ -33,6 +33,8 @@ class LLMConfig:
     enable_text_generation: bool = True
     enable_image_generation: bool = True
     enable_audio_generation: bool = True
+    retry_limit: int = 3
+    retry_delay: float = 5.0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -58,6 +60,8 @@ class LLMConfig:
             "enable_text_generation": self.enable_text_generation,
             "enable_image_generation": self.enable_image_generation,
             "enable_audio_generation": self.enable_audio_generation,
+            "retry_limit": self.retry_limit,
+            "retry_delay": self.retry_delay,
         }
 
     @classmethod
@@ -85,6 +89,8 @@ class LLMConfig:
             enable_text_generation=data.get("enable_text_generation", True),
             enable_image_generation=data.get("enable_image_generation", True),
             enable_audio_generation=data.get("enable_audio_generation", True),
+            retry_limit=int(data.get("retry_limit", 3)),
+            retry_delay=float(data.get("retry_delay", 5.0)),
         )
 
 

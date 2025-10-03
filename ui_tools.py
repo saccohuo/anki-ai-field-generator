@@ -45,7 +45,7 @@ class UITools:
         setting_value = self.settings.value(setting_name)
         if setting_value is None:
             setting_value = ""
-        entry = QLineEdit(setting_value)
+        entry = QLineEdit(str(setting_value))
         entry.setPlaceholderText(placeholder)
         entry.setMaximumWidth(self.max_width)
         self.widgets[setting_name] = entry

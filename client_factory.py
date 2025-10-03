@@ -69,10 +69,6 @@ class ClientFactory:
 
     def get_speech_client(self) -> Optional[SpeechClient]:
         """Return a speech client when speech generation is configured."""
-        if not self._get_bool_setting(
-            SettingsNames.ENABLE_AUDIO_GENERATION_SETTING_NAME, True
-        ):
-            return None
         audio_mappings = self.app_settings.value(
             SettingsNames.AUDIO_MAPPING_SETTING_NAME, type="QStringList"
         ) or []
@@ -200,6 +196,14 @@ class ClientFactory:
                 self.app_settings.setValue(
                     SettingsNames.ENABLE_AUDIO_GENERATION_SETTING_NAME,
                     config.enable_audio_generation,
+                )
+                self.app_settings.setValue(
+                    SettingsNames.RETRY_LIMIT_SETTING_NAME,
+                    config.retry_limit or 50,
+                )
+                self.app_settings.setValue(
+                    SettingsNames.RETRY_DELAY_SETTING_NAME,
+                    config.retry_delay or 5.0,
                 )
                 prompt_config.refresh()
             llm_client = CustomLLMClient(prompt_config)
