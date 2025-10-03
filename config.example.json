@@ -1,4 +1,7 @@
 {
+  // Recommended text models: gpt-4o (OpenAI), gpt-4o-mini (OpenAI), claude-3.5-sonnet (Anthropic)
+  // Recommended image models: gpt-image-1 (OpenAI), dall-e-3 (OpenAI), gemini-1.5-pro-vision (Google)
+  // Recommended speech models: gpt-4o-mini-tts (OpenAI), whisper-1 (OpenAI), gemini-1.5-pro with audio (Google)
   "configs": [
     {
       "name": "Default",

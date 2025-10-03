@@ -1,5 +1,11 @@
 # My own files
+openai_speech_sample.mp3
+gemini_speech_sample.wav
 setup_keys.sh
+AGENTS.md
+LOG.md
+config.yaml
+tests/
 
 # Local configuration generated at runtime
 config.json

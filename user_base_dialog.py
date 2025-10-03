@@ -11,7 +11,7 @@ from aqt.qt import (
 )
 from PyQt6 import QtCore
 from .settings import SettingsNames
-from .two_col_layout import DynamicForm, ImageMappingForm
+from .two_col_layout import DynamicForm, ImageMappingForm, AudioMappingForm
 from .ui_tools import UITools
 from .gemini_client import GeminiClient
 
@@ -38,6 +38,12 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
         self.selected_notes = selected_notes
         self.ui_tools: UITools = UITools(app_settings, self._width)
         self.image_mapping_form: ImageMappingForm | None = None
+        self.audio_mapping_form: AudioMappingForm | None = None
+        self._audio_api_key_entry = None
+        self._audio_endpoint_entry = None
+        self._audio_model_entry = None
+        self._audio_voice_entry = None
+        self._audio_format_entry = None
 
     def show(self):
         if self.layout() is not None:
@@ -142,6 +148,65 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
         if not image_model_entry.text().strip():
             image_model_entry.setText(GeminiClient.IMAGE_MODEL)
         right_layout.addWidget(image_model_entry)
+
+        right_layout.addWidget(
+            self.ui_tools.create_label("Speech Generation Mapping:")
+        )
+        right_layout.addWidget(
+            self.ui_tools.create_descriptive_text(
+                "Map the text field that should be spoken to the field that should receive the audio tag. The plugin reads the text from the first field, synthesizes speech, and writes only a [sound:] tag into the second field."
+            )
+        )
+        audio_mapping_strings = self.app_settings.value(
+            SettingsNames.AUDIO_MAPPING_SETTING_NAME, type="QStringList"
+        ) or []
+        audio_pairs = [
+            tuple(part.strip() for part in mapping.split(IMAGE_MAPPING_SEPARATOR, 1))
+            for mapping in audio_mapping_strings
+            if IMAGE_MAPPING_SEPARATOR in mapping
+        ]
+        self.audio_mapping_form = AudioMappingForm(audio_pairs, card_fields)
+        right_layout.addWidget(self.audio_mapping_form)
+
+        right_layout.addWidget(
+            self.ui_tools.create_label("Speech Generation (optional):")
+        )
+        audio_key_entry = self.ui_tools.create_text_entry(
+            SettingsNames.AUDIO_API_KEY_SETTING_NAME,
+            "Speech API key (required for audio generation)"
+        )
+        right_layout.addWidget(audio_key_entry)
+        self._audio_api_key_entry = audio_key_entry
+
+        audio_endpoint_entry = self.ui_tools.create_text_entry(
+            SettingsNames.AUDIO_ENDPOINT_SETTING_NAME,
+            "Custom speech endpoint (optional)"
+        )
+        right_layout.addWidget(audio_endpoint_entry)
+        self._audio_endpoint_entry = audio_endpoint_entry
+
+        audio_model_entry = self.ui_tools.create_text_entry(
+            SettingsNames.AUDIO_MODEL_SETTING_NAME,
+            "Speech model name (optional)"
+        )
+        right_layout.addWidget(audio_model_entry)
+        self._audio_model_entry = audio_model_entry
+
+        audio_voice_entry = self.ui_tools.create_text_entry(
+            SettingsNames.AUDIO_VOICE_SETTING_NAME,
+            "Preferred voice or speaker id"
+        )
+        right_layout.addWidget(audio_voice_entry)
+        self._audio_voice_entry = audio_voice_entry
+
+        audio_format_entry = self.ui_tools.create_text_entry(
+            SettingsNames.AUDIO_FORMAT_SETTING_NAME,
+            "Audio format (wav or pcm)"
+        )
+        if not audio_format_entry.text().strip():
+            audio_format_entry.setText("wav")
+        right_layout.addWidget(audio_format_entry)
+        self._audio_format_entry = audio_format_entry
 
         # Misc
         right_layout.addWidget(
@@ -252,15 +317,24 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
             SettingsNames.DESTINATION_FIELD_SETTING_NAME,
             fields,
         )
+        image_mapping_strings: list[str] = []
         if self.image_mapping_form is not None:
-            pairs = self.image_mapping_form.get_pairs()
-            mapping_strings = [
-                f"{prompt}{IMAGE_MAPPING_SEPARATOR}{image}" for prompt, image in pairs
+            image_pairs = self.image_mapping_form.get_pairs()
+            image_mapping_strings = [
+                f"{prompt}{IMAGE_MAPPING_SEPARATOR}{image}" for prompt, image in image_pairs
             ]
-        else:
-            mapping_strings = []
         self.app_settings.setValue(
-            SettingsNames.IMAGE_MAPPING_SETTING_NAME, mapping_strings
+            SettingsNames.IMAGE_MAPPING_SETTING_NAME, image_mapping_strings
+        )
+
+        audio_mapping_strings: list[str] = []
+        if self.audio_mapping_form is not None:
+            audio_pairs = self.audio_mapping_form.get_pairs()
+            audio_mapping_strings = [
+                f"{prompt}{IMAGE_MAPPING_SEPARATOR}{audio}" for prompt, audio in audio_pairs
+            ]
+        self.app_settings.setValue(
+            SettingsNames.AUDIO_MAPPING_SETTING_NAME, audio_mapping_strings
         )
         return True
 
@@ -298,6 +372,19 @@ class UserBaseDialog(QWidget, metaclass=MyMeta):
             if not api_key:
                 show_error_message(
                     "Enter the image generation API key before running the plugin."
+                )
+                return False
+
+        has_audio_mapping = bool(
+            self.audio_mapping_form and self.audio_mapping_form.get_pairs()
+        )
+        if has_audio_mapping:
+            audio_key = ""
+            if self._audio_api_key_entry is not None:
+                audio_key = self._audio_api_key_entry.text().strip()
+            if not audio_key:
+                show_error_message(
+                    "Enter the speech generation API key before running the plugin."
                 )
                 return False
 

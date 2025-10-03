@@ -170,6 +170,11 @@ class CustomDialog(UserBaseDialog):
         self._set_setting(SettingsNames.IMAGE_API_KEY_SETTING_NAME, config.image_api_key)
         self._set_setting(SettingsNames.IMAGE_ENDPOINT_SETTING_NAME, config.image_endpoint)
         self._set_setting(SettingsNames.IMAGE_MODEL_SETTING_NAME, config.image_model)
+        self._set_setting(SettingsNames.AUDIO_API_KEY_SETTING_NAME, config.audio_api_key)
+        self._set_setting(SettingsNames.AUDIO_ENDPOINT_SETTING_NAME, config.audio_endpoint)
+        self._set_setting(SettingsNames.AUDIO_MODEL_SETTING_NAME, config.audio_model)
+        self._set_setting(SettingsNames.AUDIO_VOICE_SETTING_NAME, config.audio_voice)
+        self._set_setting(SettingsNames.AUDIO_FORMAT_SETTING_NAME, config.audio_format or "wav")
         if hasattr(self, "two_col_form") and self.two_col_form:
             self.two_col_form.set_inputs(
                 config.response_keys,
@@ -182,6 +187,13 @@ class CustomDialog(UserBaseDialog):
                 if IMAGE_MAPPING_SEPARATOR in mapping
             ]
             self.image_mapping_form.set_pairs(pairs)
+        if hasattr(self, "audio_mapping_form") and self.audio_mapping_form:
+            audio_pairs = [
+                tuple(part.strip() for part in mapping.split(IMAGE_MAPPING_SEPARATOR, 1))
+                for mapping in config.audio_prompt_mappings
+                if IMAGE_MAPPING_SEPARATOR in mapping
+            ]
+            self.audio_mapping_form.set_pairs(audio_pairs)
         self.app_settings.setValue(SettingsNames.CONFIG_NAME_SETTING_NAME, config.name)
         self._active_config_name = config.name
 
@@ -205,6 +217,12 @@ class CustomDialog(UserBaseDialog):
         image_mappings = [
             f"{prompt}{IMAGE_MAPPING_SEPARATOR}{image}" for prompt, image in image_pairs
         ]
+        audio_pairs = []
+        if hasattr(self, "audio_mapping_form") and self.audio_mapping_form:
+            audio_pairs = self.audio_mapping_form.get_pairs()
+        audio_mappings = [
+            f"{prompt}{IMAGE_MAPPING_SEPARATOR}{audio}" for prompt, audio in audio_pairs
+        ]
         config = LLMConfig(
             name=settings.get(SettingsNames.CONFIG_NAME_SETTING_NAME, "").strip(),
             endpoint=settings.get(SettingsNames.ENDPOINT_SETTING_NAME, "").strip(),
@@ -218,6 +236,12 @@ class CustomDialog(UserBaseDialog):
             image_api_key=settings.get(SettingsNames.IMAGE_API_KEY_SETTING_NAME, "").strip(),
             image_endpoint=settings.get(SettingsNames.IMAGE_ENDPOINT_SETTING_NAME, "").strip(),
             image_model=settings.get(SettingsNames.IMAGE_MODEL_SETTING_NAME, "").strip(),
+            audio_prompt_mappings=audio_mappings,
+            audio_api_key=settings.get(SettingsNames.AUDIO_API_KEY_SETTING_NAME, "").strip(),
+            audio_endpoint=settings.get(SettingsNames.AUDIO_ENDPOINT_SETTING_NAME, "").strip(),
+            audio_model=settings.get(SettingsNames.AUDIO_MODEL_SETTING_NAME, "").strip(),
+            audio_voice=settings.get(SettingsNames.AUDIO_VOICE_SETTING_NAME, "").strip(),
+            audio_format=(settings.get(SettingsNames.AUDIO_FORMAT_SETTING_NAME, "wav").strip() or "wav"),
         )
         if self._active_config_name and self._active_config_name != config.name:
             self.store.delete(self._active_config_name)

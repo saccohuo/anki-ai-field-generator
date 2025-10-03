@@ -22,6 +22,7 @@ Compared with the upstream project, this fork adds:
 
 - This plugin allows you to use Large Language Models (LLMs) to add information to your Anki flashcards using the power of AI.
 - Supports Claude (Anthropic), ChatGPT (OpenAI), Gemini (Google), and Deepseek models.
+- Optional text-to-speech pipeline that fills audio fields with `[sound:]` tags generated via OpenAI.
 - Completely free! (You create your own API key and pay for LLM usage)
 
 ## Quickstart:
@@ -132,6 +133,22 @@ In our example, the LLM returns:
 - an "exampleSentence", which gets saved to the "de_sentence" field on our card
 - a "translation", which gets saved to the "en_sentence" field on our card
 
+</details>
+
+<details>
+<summary><b>Optional: Generate audio from your fields</b></summary>
+<br/>
+Use the <em>Speech Generation Mapping</em> section in the settings dialog to map a source text field to the card field that should receive the audio tag. When the source field has content, the plugin calls the configured speech endpoint (OpenAI by default, Gemini when you select a Gemini TTS model) and stores the resulting file in Anki's media folder with a <code>[sound:...]</code> tag.
+
+- Provide a speech API key dedicated to audio requests; the plugin does not reuse your main LLM key.
+- Defaults target OpenAI (<code>gpt-4o-mini-tts</code>, <code>alloy</code>, <code>mp3</code>). To switch to Google Gemini, set the audio model (and optionally override the voice) to match your Gemini setup（如 <code>gemini-2.5-flash-preview-tts</code>），系统默认使用 <code>Kore</code> 音色。
+- Gemini 语音接口目前仅返回 24kHz 线性 PCM，我们会自动封装为 <code>.wav</code> 文件；请把音频格式字段设置为 <code>wav</code>（或留空，插件会回落到 <code>wav</code>）。
+- The first field in each mapping provides the text to be spoken; the second field receives only the generated <code>[sound:...]</code> tag.
+- Existing field contents are preserved; the new audio tag is appended on a new line if needed.
+
+Run the add-on again whenever you want to refresh the audio files after changing settings.
+
+<em>Live verification</em>: 若需实际走通 Gemini TTS，可在仓库根目录运行 `python -m tests.speech.run_gemini_tts_sample`，或在设置了 `GEMINI_API_KEY` 与 `RUN_GEMINI_TTS_LIVE_TEST=1` 后执行 `python -m unittest tests.speech.live_gemini_tts_test`。
 </details>
 
 ## FAQ:

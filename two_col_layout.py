@@ -184,3 +184,76 @@ class ImageMappingForm(QWidget):
                 if prompt_value and image_value:
                     pairs.append((prompt_value, image_value))
         return pairs
+
+
+class AudioMappingForm(QWidget):
+    def __init__(self, pairs: list[tuple[str, str]], card_fields: list[str]):
+        super().__init__()
+        base_fields = list(card_fields)
+        if "" not in base_fields:
+            base_fields = [""] + base_fields
+        self._card_fields = base_fields
+        self._item_width = 250
+        self.layout = QVBoxLayout(self)
+        self.add_button = QPushButton("Add Mapping")
+        self.add_button.clicked.connect(lambda: self.add_row())
+        if pairs:
+            for prompt_field, audio_field in pairs:
+                self.add_row(prompt_field, audio_field)
+        else:
+            self.add_row()
+        self.layout.addWidget(self.add_button)
+        self.setLayout(self.layout)
+
+    def add_row(self, prompt_field: str = "", audio_field: str = "") -> None:
+        row_layout = QHBoxLayout()
+
+        prompt_combo = QComboBox()
+        prompt_combo.setMaximumWidth(self._item_width)
+        prompt_combo.addItems(self._card_fields)
+        prompt_combo.setCurrentText(prompt_field)
+        row_layout.addWidget(prompt_combo)
+
+        audio_combo = QComboBox()
+        audio_combo.setMaximumWidth(self._item_width)
+        audio_combo.addItems(self._card_fields)
+        audio_combo.setCurrentText(audio_field)
+        row_layout.addWidget(audio_combo)
+
+        index = self.layout.count() - 1
+        if index < 0:
+            self.layout.addLayout(row_layout)
+        else:
+            self.layout.insertLayout(index, row_layout)
+
+    def clear_rows(self) -> None:
+        for index in reversed(range(self.layout.count() - 1)):
+            item = self.layout.itemAt(index)
+            if isinstance(item, QHBoxLayout):
+                while item.count():
+                    widget_item = item.takeAt(0)
+                    widget = widget_item.widget()
+                    if widget is not None:
+                        widget.deleteLater()
+                self.layout.removeItem(item)
+
+    def set_pairs(self, pairs: list[tuple[str, str]]) -> None:
+        self.clear_rows()
+        if pairs:
+            for prompt_field, audio_field in pairs:
+                self.add_row(prompt_field, audio_field)
+        else:
+            self.add_row()
+
+    def get_pairs(self) -> list[tuple[str, str]]:
+        pairs: list[tuple[str, str]] = []
+        for index in range(self.layout.count() - 1):
+            item = self.layout.itemAt(index)
+            if isinstance(item, QHBoxLayout) and item.count() >= 2:
+                prompt_widget = item.itemAt(0).widget()
+                audio_widget = item.itemAt(1).widget()
+                prompt_value = prompt_widget.currentText().strip() if isinstance(prompt_widget, QComboBox) else ""
+                audio_value = audio_widget.currentText().strip() if isinstance(audio_widget, QComboBox) else ""
+                if prompt_value and audio_value:
+                    pairs.append((prompt_value, audio_value))
+        return pairs

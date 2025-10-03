@@ -115,6 +115,36 @@ class ConfigManagerDialog(QDialog):
         )
         form_layout.addRow(QLabel("Image Model:"), self.image_model_input)
 
+        self.audio_mapping_input = QTextEdit()
+        self.audio_mapping_input.setPlaceholderText(
+            "text_field -> audio_field (one per line; stores [sound:...] in the second field)"
+        )
+        self.audio_mapping_input.setToolTip(
+            "Each mapping takes the text from the first field, runs TTS, and writes the resulting [sound:...] tag into the second field."
+        )
+        form_layout.addRow(QLabel("Speech Field Mappings:"), self.audio_mapping_input)
+
+        self.audio_api_key_input = QLineEdit()
+        self.audio_api_key_input.setPlaceholderText("Speech API key (required for audio generation)")
+        form_layout.addRow(QLabel("Speech API Key:"), self.audio_api_key_input)
+
+        self.audio_endpoint_input = QLineEdit()
+        self.audio_endpoint_input.setPlaceholderText("Custom speech endpoint (optional)")
+        form_layout.addRow(QLabel("Speech Endpoint:"), self.audio_endpoint_input)
+
+        self.audio_model_input = QLineEdit()
+        self.audio_model_input.setPlaceholderText("Speech model name (e.g. gpt-4o-mini-tts)")
+        form_layout.addRow(QLabel("Speech Model:"), self.audio_model_input)
+
+        self.audio_voice_input = QLineEdit()
+        self.audio_voice_input.setPlaceholderText("Preferred voice (e.g. alloy)")
+        form_layout.addRow(QLabel("Speech Voice:"), self.audio_voice_input)
+
+        self.audio_format_input = QLineEdit()
+        self.audio_format_input.setPlaceholderText("Audio format (wav or pcm)")
+        self.audio_format_input.setText("wav")
+        form_layout.addRow(QLabel("Speech Format:"), self.audio_format_input)
+
         form_container.addWidget(form_widget)
         form_container.addStretch()
 
@@ -178,6 +208,19 @@ class ConfigManagerDialog(QDialog):
             self.image_endpoint_input.setText(config.image_endpoint)
         if hasattr(self, "image_model_input"):
             self.image_model_input.setText(config.image_model)
+        if hasattr(self, "audio_mapping_input"):
+            self.audio_mapping_input.setPlainText("\n".join(config.audio_prompt_mappings))
+        if hasattr(self, "audio_api_key_input"):
+            self.audio_api_key_input.setText(config.audio_api_key)
+        if hasattr(self, "audio_endpoint_input"):
+            self.audio_endpoint_input.setText(config.audio_endpoint)
+        if hasattr(self, "audio_model_input"):
+            self.audio_model_input.setText(config.audio_model)
+        if hasattr(self, "audio_voice_input"):
+            self.audio_voice_input.setText(config.audio_voice)
+        if hasattr(self, "audio_format_input"):
+            value = config.audio_format or "wav"
+            self.audio_format_input.setText(value)
 
     def _clear_form(self) -> None:
         self.name_input.clear()
@@ -196,6 +239,18 @@ class ConfigManagerDialog(QDialog):
             self.image_endpoint_input.clear()
         if hasattr(self, "image_model_input"):
             self.image_model_input.clear()
+        if hasattr(self, "audio_mapping_input"):
+            self.audio_mapping_input.clear()
+        if hasattr(self, "audio_api_key_input"):
+            self.audio_api_key_input.clear()
+        if hasattr(self, "audio_endpoint_input"):
+            self.audio_endpoint_input.clear()
+        if hasattr(self, "audio_model_input"):
+            self.audio_model_input.clear()
+        if hasattr(self, "audio_voice_input"):
+            self.audio_voice_input.clear()
+        if hasattr(self, "audio_format_input"):
+            self.audio_format_input.setText("wav")
 
     # Button handlers --------------------------------------------------
 
@@ -257,6 +312,23 @@ class ConfigManagerDialog(QDialog):
                     image_mappings.append(
                         f"{prompt}{IMAGE_MAPPING_SEPARATOR}{image_field}"
                     )
+        audio_mapping_lines = []
+        if hasattr(self, "audio_mapping_input"):
+            audio_mapping_lines = [
+                line.strip()
+                for line in self.audio_mapping_input.toPlainText().splitlines()
+                if line.strip()
+            ]
+        audio_mappings = []
+        for line in audio_mapping_lines:
+            if IMAGE_MAPPING_SEPARATOR in line:
+                prompt, audio_field = [
+                    part.strip() for part in line.split(IMAGE_MAPPING_SEPARATOR, 1)
+                ]
+                if prompt and audio_field:
+                    audio_mappings.append(
+                        f"{prompt}{IMAGE_MAPPING_SEPARATOR}{audio_field}"
+                    )
         config = LLMConfig(
             name=name,
             endpoint=endpoint,
@@ -270,6 +342,16 @@ class ConfigManagerDialog(QDialog):
             image_api_key=(self.image_api_key_input.text().strip() if hasattr(self, "image_api_key_input") else ""),
             image_endpoint=(self.image_endpoint_input.text().strip() if hasattr(self, "image_endpoint_input") else ""),
             image_model=(self.image_model_input.text().strip() if hasattr(self, "image_model_input") else ""),
+            audio_prompt_mappings=audio_mappings,
+            audio_api_key=(self.audio_api_key_input.text().strip() if hasattr(self, "audio_api_key_input") else ""),
+            audio_endpoint=(self.audio_endpoint_input.text().strip() if hasattr(self, "audio_endpoint_input") else ""),
+            audio_model=(self.audio_model_input.text().strip() if hasattr(self, "audio_model_input") else ""),
+            audio_voice=(self.audio_voice_input.text().strip() if hasattr(self, "audio_voice_input") else ""),
+            audio_format=(
+                (self.audio_format_input.text().strip() or "wav")
+                if hasattr(self, "audio_format_input")
+                else "wav"
+            ),
         )
         if self._current_name and self._current_name != name:
             self.store.delete(self._current_name)

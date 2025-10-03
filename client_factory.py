@@ -2,6 +2,8 @@
 Factory that returns the corrent LLM Client configurations.
 """
 
+from typing import Optional
+
 from .claude_client import ClaudeClient
 from .claude_dialog import ClaudeDialog
 from .config_store import ConfigStore
@@ -19,6 +21,10 @@ from .openai_dialog import OpenAIDialog
 from .prompt_config import PromptConfig
 from .progress_bar import ProgressDialog
 from .settings import SettingsNames, get_settings, set_new_settings_group
+from .speech_client import SpeechClient
+from .speech_config import SpeechConfig
+from .openai_speech_client import OpenAISpeechClient
+from .gemini_speech_client import GeminiSpeechClient
 from .user_base_dialog import UserBaseDialog
 
 
@@ -42,6 +48,33 @@ class ClientFactory:
         ), f"{client_name} is not implemented as a LLM Client."
         self.client_name = client_name
         set_new_settings_group(self.app_settings, self.client_name)
+
+    def get_speech_client(self) -> Optional[SpeechClient]:
+        """Return a speech client when speech generation is configured."""
+        audio_mappings = self.app_settings.value(
+            SettingsNames.AUDIO_MAPPING_SETTING_NAME, type="QStringList"
+        ) or []
+        if not audio_mappings:
+            return None
+        speech_config = SpeechConfig.from_settings(self.app_settings)
+        if not speech_config.has_credentials():
+            return None
+        endpoint_hint = (speech_config.endpoint or "").lower()
+        model_hint = (speech_config.model or "").lower()
+        if (
+            "generativelanguage" in endpoint_hint
+            or "googleapis" in endpoint_hint
+            or model_hint.startswith("gemini")
+        ):
+            return GeminiSpeechClient(speech_config)
+        if (
+            "openai" in endpoint_hint
+            or model_hint.startswith("gpt")
+            or model_hint.startswith("o1")
+            or not endpoint_hint
+        ):
+            return OpenAISpeechClient(speech_config)
+        return None
 
     def get_client(self) -> LLMClient:
         """
@@ -100,6 +133,36 @@ class ClientFactory:
                     SettingsNames.DESTINATION_FIELD_SETTING_NAME,
                     config.destination_fields,
                 )
+                self.app_settings.setValue(
+                    SettingsNames.IMAGE_MAPPING_SETTING_NAME, config.image_prompt_mappings
+                )
+                self.app_settings.setValue(
+                    SettingsNames.IMAGE_API_KEY_SETTING_NAME, config.image_api_key
+                )
+                self.app_settings.setValue(
+                    SettingsNames.IMAGE_ENDPOINT_SETTING_NAME, config.image_endpoint
+                )
+                self.app_settings.setValue(
+                    SettingsNames.IMAGE_MODEL_SETTING_NAME, config.image_model
+                )
+                self.app_settings.setValue(
+                    SettingsNames.AUDIO_MAPPING_SETTING_NAME, config.audio_prompt_mappings
+                )
+                self.app_settings.setValue(
+                    SettingsNames.AUDIO_API_KEY_SETTING_NAME, config.audio_api_key
+                )
+                self.app_settings.setValue(
+                    SettingsNames.AUDIO_ENDPOINT_SETTING_NAME, config.audio_endpoint
+                )
+                self.app_settings.setValue(
+                    SettingsNames.AUDIO_MODEL_SETTING_NAME, config.audio_model
+                )
+                self.app_settings.setValue(
+                    SettingsNames.AUDIO_VOICE_SETTING_NAME, config.audio_voice
+                )
+                self.app_settings.setValue(
+                    SettingsNames.AUDIO_FORMAT_SETTING_NAME, config.audio_format or "wav"
+                )
                 prompt_config.refresh()
             llm_client = CustomLLMClient(prompt_config)
             return llm_client
@@ -140,7 +203,12 @@ class ClientFactory:
         This also refreshes the settings and the LLM client, as the user may have
         changed them.
         """
-        note_processor = NoteProcessor(notes, self.get_client(), self.app_settings)
+        note_processor = NoteProcessor(
+            notes,
+            self.get_client(),
+            self.app_settings,
+            speech_client=self.get_speech_client(),
+        )
         dialog = ProgressDialog(note_processor, success_callback=self.mw.close)
         dialog.exec()
         browser.mw.reset()

@@ -24,6 +24,12 @@ class SettingsNames:
     IMAGE_API_KEY_SETTING_NAME = "image_api_key"
     IMAGE_ENDPOINT_SETTING_NAME = "image_endpoint"
     IMAGE_MODEL_SETTING_NAME = "image_model"
+    AUDIO_MAPPING_SETTING_NAME = "audio_prompt_mappings"
+    AUDIO_API_KEY_SETTING_NAME = "audio_api_key"
+    AUDIO_MODEL_SETTING_NAME = "audio_model"
+    AUDIO_VOICE_SETTING_NAME = "audio_voice"
+    AUDIO_ENDPOINT_SETTING_NAME = "audio_endpoint"
+    AUDIO_FORMAT_SETTING_NAME = "audio_format"
 
 
 def get_settings() -> QSettings:

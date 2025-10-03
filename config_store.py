@@ -23,6 +23,12 @@ class LLMConfig:
     image_api_key: str = ""
     image_endpoint: str = ""
     image_model: str = ""
+    audio_prompt_mappings: List[str] = field(default_factory=list)
+    audio_api_key: str = ""
+    audio_endpoint: str = ""
+    audio_model: str = ""
+    audio_voice: str = ""
+    audio_format: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -38,6 +44,12 @@ class LLMConfig:
             "image_api_key": self.image_api_key,
             "image_endpoint": self.image_endpoint,
             "image_model": self.image_model,
+            "audio_prompt_mappings": self.audio_prompt_mappings,
+            "audio_api_key": self.audio_api_key,
+            "audio_endpoint": self.audio_endpoint,
+            "audio_model": self.audio_model,
+            "audio_voice": self.audio_voice,
+            "audio_format": self.audio_format,
         }
 
     @classmethod
@@ -55,6 +67,12 @@ class LLMConfig:
             image_api_key=data.get("image_api_key", ""),
             image_endpoint=data.get("image_endpoint", ""),
             image_model=data.get("image_model", ""),
+            audio_prompt_mappings=list(data.get("audio_prompt_mappings", [])),
+            audio_api_key=data.get("audio_api_key", ""),
+            audio_endpoint=data.get("audio_endpoint", ""),
+            audio_model=data.get("audio_model", ""),
+            audio_voice=data.get("audio_voice", ""),
+            audio_format=data.get("audio_format", ""),
         )
 
 

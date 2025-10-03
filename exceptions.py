@@ -15,6 +15,7 @@ class ErrorCode(str, Enum):
     IMAGE_MISSING_DATA = "image_missing_data"
     IMAGE_DECODE = "image_decode"
     MEDIA_WRITE_FAILED = "media_write_failed"
+    AUDIO_MISSING_DATA = "audio_missing_data"
 
 
 class ExternalException(Exception):
