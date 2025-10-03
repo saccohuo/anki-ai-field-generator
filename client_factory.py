@@ -45,6 +45,7 @@ class ClientFactory:
         self._note_type_lookup = self._build_note_type_lookup()
         self.active_config = self._resolve_initial_config()
         self.window: Optional[MainWindow] = None
+        self.progress_dialog: Optional[ProgressDialog] = None
 
     # Configuration lifecycle -----------------------------------------
 
@@ -124,11 +125,31 @@ class ClientFactory:
             generate_images=generate_images,
             generate_audio=generate_audio,
         )
-        success_callback = self.window.close if self.window else (lambda: None)
-        dialog = ProgressDialog(note_processor, success_callback=success_callback)
-        dialog.exec()
-        browser.mw.reset()
-        self.window = None
+        def on_success() -> None:
+            if self.window:
+                self.window.close()
+                self.window = None
+            browser.mw.reset()
+            self.progress_dialog = None
+
+        dialog = ProgressDialog(note_processor, success_callback=on_success)
+        owner_window = self.window
+        if owner_window is not None:
+            owner_window.hide()
+
+            def restore_window() -> None:
+                if self.window is owner_window and self.window is not None:
+                    self.window.show()
+
+            dialog.destroyed.connect(restore_window)
+
+        dialog.show()
+        self.progress_dialog = dialog
+
+        def clear_dialog_reference() -> None:
+            setattr(self, "progress_dialog", None)
+
+        dialog.destroyed.connect(clear_dialog_reference)
 
     # Client helpers ---------------------------------------------------
 

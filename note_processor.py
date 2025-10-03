@@ -1,10 +1,11 @@
 
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 import html
 import json
 import re
+import threading
 
 from anki.notes import Note as AnkiNote
 from aqt.qt import QSettings
@@ -34,6 +35,8 @@ class NoteProcessor(QThread):
     progress_updated = pyqtSignal(int, str)
     finished = pyqtSignal()
     error = pyqtSignal(str)
+    conflict_detected = pyqtSignal(dict)
+    conflict_decision = pyqtSignal(int, str)
 
     def __init__(
         self,
@@ -48,6 +51,11 @@ class NoteProcessor(QThread):
         missing_field_is_error: bool = False,
     ) -> None:
         super().__init__()
+        self.conflict_decision.connect(self._on_conflict_decision)
+        self._conflict_event = threading.Event()
+        self._active_conflict_note_id: Optional[int] = None
+        self._current_conflict_decision: Optional[str] = None
+        self.cancelled = False
         self.notes = notes
         self.total_items = len(notes)
         self.client = client
@@ -183,11 +191,19 @@ class NoteProcessor(QThread):
             self._speech_client = None
 
         self._note_progress: dict[int, dict[str, Any]] = {}
+        self._snapshots = self._build_initial_snapshots()
         self._initialize_note_progress()
 
     def run(self) -> None:
         for i in range(self.current_index, self.total_items):
+            if self.isInterruptionRequested():
+                self.cancelled = True
+                return
             note = self.notes[self.current_index]
+            refreshed_note = note.col.get_note(note.id)
+            if refreshed_note is not None:
+                note = refreshed_note
+                self.notes[self.current_index] = note
             note_state = self._note_progress.setdefault(
                 note.id, self._create_note_state()
             )
@@ -215,10 +231,40 @@ class NoteProcessor(QThread):
                     )
                     return
 
-                for note_field, response_key in zip(
-                    self.note_fields, self.response_keys
-                ):
-                    note[note_field] = response[response_key]
+                text_new_values = {
+                    note_field: response[response_key]
+                    for note_field, response_key in zip(
+                        self.note_fields, self.response_keys
+                    )
+                }
+                text_fields = list(text_new_values.keys())
+                note, conflicts = self._check_for_conflicts(
+                    note,
+                    "text",
+                    text_fields,
+                    text_new_values,
+                )
+                self.notes[self.current_index] = note
+                skip_text = False
+                if conflicts:
+                    decision = self._wait_for_conflict_resolution(
+                        note.id,
+                        "text",
+                        conflicts,
+                    )
+                    if decision == "skip":
+                        skip_text = True
+                        self._update_snapshot_section(note, "text", text_fields)
+                    elif decision == "abort":
+                        self.error.emit("Processing cancelled by user.")
+                        return
+                if not skip_text:
+                    for field_name, value in text_new_values.items():
+                        note[field_name] = value
+                    self._commit_note_sections(
+                        note,
+                        [("text", text_fields)],
+                    )
                 note_state["text"] = True
             else:
                 note_state["text"] = True
@@ -234,12 +280,18 @@ class NoteProcessor(QThread):
                     interim_progress = int(min(99, base_progress + per_card / 2))
                     self.progress_updated.emit(interim_progress, "Generating image...")
                     try:
-                        self._apply_image_generation(
+                        note, image_fields = self._apply_image_generation(
                             note,
                             note_state,
                             base_progress=base_progress,
                             per_card=per_card,
                         )
+                        self.notes[self.current_index] = note
+                        if image_fields:
+                            self._commit_note_sections(
+                                note,
+                                [("image", image_fields)],
+                            )
                     except ExternalException as exc:
                         self.error.emit(
                             self._format_error_message("Image generation", exc)
@@ -263,12 +315,18 @@ class NoteProcessor(QThread):
                     speech_progress = int(min(99, base_progress + (per_card * 0.75)))
                     self.progress_updated.emit(speech_progress, "Generating audio...")
                     try:
-                        self._apply_speech_generation(
+                        note, audio_fields = self._apply_speech_generation(
                             note,
                             note_state,
                             base_progress=base_progress,
                             per_card=per_card,
                         )
+                        self.notes[self.current_index] = note
+                        if audio_fields:
+                            self._commit_note_sections(
+                                note,
+                                [("audio", audio_fields)],
+                            )
                     except ExternalException as exc:
                         self.error.emit(
                             self._format_error_message("Speech generation", exc)
@@ -285,7 +343,6 @@ class NoteProcessor(QThread):
                 min(100, int(base_progress + per_card)),
                 f"Completed {i + 1}/{self.total_items}",
             )
-            note.col.update_note(note)
             self.current_index += 1
 
         if self.total_items == 1:
@@ -300,11 +357,11 @@ class NoteProcessor(QThread):
         *,
         base_progress: float,
         per_card: float,
-    ) -> None:
+    ) -> tuple[AnkiNote, list[str]]:
         if not self._speech_client or not self.audio_field_mappings:
             for mapping in self.audio_field_mappings:
                 state["audio"][mapping] = True
-            return
+            return note, []
 
         pending: list[tuple[tuple[str, str], str]] = []
         for prompt_field, audio_field in self.audio_field_mappings:
@@ -322,9 +379,30 @@ class NoteProcessor(QThread):
             pending.append((mapping_key, prompt_value))
 
         if not pending:
-            return
+            return note, []
+
+        pending_targets = [audio_field for (_, audio_field), _ in pending]
+        note, conflicts = self._check_for_conflicts(
+            note,
+            "audio",
+            pending_targets,
+            {field: "[将写入新音频标签]" for field in pending_targets},
+        )
+        if conflicts:
+            decision = self._wait_for_conflict_resolution(note.id, "audio", conflicts)
+            if decision == "skip":
+                self._update_snapshot_section(note, "audio", pending_targets)
+                for mapping_key, _ in pending:
+                    state["audio"][mapping_key] = True
+                return note, []
+            if decision == "abort":
+                raise ExternalException(
+                    "Speech generation cancelled by user.",
+                    code=ErrorCode.GENERIC,
+                )
 
         retry_progress = int(min(99, base_progress + (per_card * 0.75)))
+        overwritten_fields: list[str] = []
 
         for (prompt_field, audio_field), prompt_value in pending:
             existing_audio_files = self._extract_audio_filenames(
@@ -359,6 +437,9 @@ class NoteProcessor(QThread):
             if existing_audio_files:
                 self._trash_audio_files(note, existing_audio_files)
             state["audio"][(prompt_field, audio_field)] = True
+            overwritten_fields.append(audio_field)
+
+        return note, overwritten_fields
 
     def _apply_image_generation(
         self,
@@ -367,9 +448,9 @@ class NoteProcessor(QThread):
         *,
         base_progress: float,
         per_card: float,
-    ) -> None:
+    ) -> tuple[AnkiNote, list[str]]:
         if not self.image_field_mappings:
-            return
+            return note, []
 
         image_client = self._get_image_client()
         configured_model = getattr(image_client.prompt_config, "model", "") or None
@@ -389,8 +470,29 @@ class NoteProcessor(QThread):
             pending.append((mapping_key, prompt_value))
 
         if not pending:
-            return
+            return note, []
 
+        pending_targets = [image_field for (_, image_field), _ in pending]
+        note, conflicts = self._check_for_conflicts(
+            note,
+            "image",
+            pending_targets,
+            {field: "[将写入新图像]" for field in pending_targets},
+        )
+        if conflicts:
+            decision = self._wait_for_conflict_resolution(note.id, "image", conflicts)
+            if decision == "skip":
+                self._update_snapshot_section(note, "image", pending_targets)
+                for mapping_key, _ in pending:
+                    state["image"][mapping_key] = True
+                return note, []
+            if decision == "abort":
+                raise ExternalException(
+                    "Image generation cancelled by user.",
+                    code=ErrorCode.GENERIC,
+                )
+
+        overwritten_fields: list[str] = []
         retry_progress = int(min(99, base_progress + per_card / 2))
 
         for (prompt_field, image_field), prompt_value in pending:
@@ -405,6 +507,9 @@ class NoteProcessor(QThread):
             filename = self._write_image_to_media(note, image_bytes, image_field)
             note[image_field] = f'<img src="{filename}">'
             state["image"][(prompt_field, image_field)] = True
+            overwritten_fields.append(image_field)
+
+        return note, overwritten_fields
 
     def _write_audio_to_media(
         self,
@@ -514,6 +619,26 @@ class NoteProcessor(QThread):
             "image": image_state,
             "audio": audio_state,
         }
+
+    def _build_initial_snapshots(self) -> dict[int, dict[str, dict[str, str]]]:
+        snapshots: dict[int, dict[str, dict[str, str]]] = {}
+        for note in self.notes:
+            note_snap = {
+                "text": {
+                    field: note[field] if field in note else ""
+                    for field in self.note_fields
+                },
+                "image": {
+                    target: note[target] if target in note else ""
+                    for _, target in self.image_field_mappings
+                },
+                "audio": {
+                    target: note[target] if target in note else ""
+                    for _, target in self.audio_field_mappings
+                },
+            }
+            snapshots[note.id] = note_snap
+        return snapshots
 
     @staticmethod
     def _parse_text_rows(
@@ -641,6 +766,11 @@ class NoteProcessor(QThread):
     ) -> Any:
         attempt = 1
         while True:
+            if self.isInterruptionRequested():
+                raise ExternalException(
+                    "Operation cancelled by user.",
+                    code=ErrorCode.GENERIC,
+                )
             try:
                 return operation()
             except ExternalException as exc:
@@ -687,3 +817,89 @@ class NoteProcessor(QThread):
         if guidance:
             summary = f"{summary}\n{guidance}"
         return summary
+
+    def _check_for_conflicts(
+        self,
+        note: AnkiNote,
+        section: str,
+        fields: Iterable[str],
+        generated_values: Optional[dict[str, str]] = None,
+    ) -> tuple[AnkiNote, dict[str, dict[str, str]]]:
+        latest = note.col.get_note(note.id) or note
+        snapshot_section = (
+            self._snapshots.get(note.id, {}).get(section, {})
+            if note.id in self._snapshots
+            else {}
+        )
+        conflicts: dict[str, dict[str, str]] = {}
+        for field in fields:
+            original_value = snapshot_section.get(field, "")
+            current_value = latest[field] if field in latest else ""
+            if current_value != original_value:
+                generated_value = (
+                    generated_values.get(field, "")
+                    if generated_values is not None
+                    else ""
+                )
+                conflicts[field] = {
+                    "original": original_value,
+                    "current": current_value,
+                    "generated": generated_value,
+                }
+        return latest, conflicts
+
+    def _wait_for_conflict_resolution(
+        self,
+        note_id: int,
+        section: str,
+        conflicts: dict[str, dict[str, str]],
+    ) -> str:
+        self._active_conflict_note_id = note_id
+        self._current_conflict_decision = None
+        self._conflict_event.clear()
+        payload = {
+            "note_id": note_id,
+            "section": section,
+            "fields": conflicts,
+        }
+        self.conflict_detected.emit(payload)
+        while not self._conflict_event.wait(0.1):
+            if self.isInterruptionRequested():
+                self._current_conflict_decision = "abort"
+                self._conflict_event.set()
+                break
+        decision = self._current_conflict_decision or "abort"
+        self._active_conflict_note_id = None
+        return decision
+
+    def _on_conflict_decision(self, note_id: int, decision: str) -> None:
+        if self._active_conflict_note_id != note_id:
+            return
+        self._current_conflict_decision = decision
+        self._conflict_event.set()
+
+    def _update_snapshot_section(
+        self,
+        note: AnkiNote,
+        section: str,
+        fields: Iterable[str],
+    ) -> None:
+        section_snap = self._snapshots.setdefault(note.id, {}).setdefault(section, {})
+        for field in fields:
+            section_snap[field] = note[field] if field in note else ""
+
+    def _commit_note_sections(
+        self,
+        note: AnkiNote,
+        sections: Iterable[tuple[str, Iterable[str]]],
+    ) -> None:
+        sections_list: list[tuple[str, list[str]]] = []
+        for section, fields in sections:
+            field_list = [field for field in fields if field]
+            if field_list:
+                sections_list.append((section, field_list))
+        if not sections_list:
+            return
+        note.col.update_note(note)
+        for section, fields in sections_list:
+            self._update_snapshot_section(note, section, fields)
