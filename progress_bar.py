@@ -77,11 +77,11 @@ class ProgressDialog(QDialog):
 
     def complete(self):
         if getattr(self.worker, "cancelled", False):
+            self.hide()
             self._safe_close()
             return
         if self._has_error:
             return
-        self.showNormal()
         self.progress_bar.setValue(100)
         self.label.setText("Processing complete!")
         self.cancel_button.hide()
@@ -90,11 +90,13 @@ class ProgressDialog(QDialog):
         self.background_button.hide()
         self.close_button.show()
         self.success_callback()
+        self.hide()
         self._safe_close()
 
     def error(self, text):
         self._has_error = True
-        self.showNormal()
+        if self.isMinimized():
+            self.showNormal()
         self.label.setText(f"<b>Error:</b> {text}")
         self.resume_button.hide()
         self.copy_button.show()
@@ -115,6 +117,7 @@ class ProgressDialog(QDialog):
         if hasattr(self.worker, "requestInterruption"):
             self.worker.requestInterruption()
         self.label.setText("Cancelling...")
+        self.hide()
         self._safe_close()
 
     def close_dialog(self):
@@ -128,7 +131,8 @@ class ProgressDialog(QDialog):
             pass
 
     def handle_conflict(self, payload: dict):
-        self.showNormal()
+        if self.isMinimized():
+            self.showNormal()
         self.raise_()
         self.activateWindow()
         dialog = ConflictDialog(payload, self)
