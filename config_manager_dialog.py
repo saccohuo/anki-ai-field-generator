@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Iterable, Optional, Sequence
+from typing import Any, Dict, Iterable, Optional, Sequence
 
 from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QDesktopServices
@@ -135,9 +135,15 @@ class ConfigManagerDialog(QDialog):
         self._text_api_keys: dict[str, str] = {}
         self._image_api_keys: dict[str, str] = {}
         self._audio_api_keys: dict[str, str] = {}
+        self._loading = True
+        self._dirty = False
+        self._form_snapshot: Dict[str, Any] = {}
 
         self._build_ui()
+        self._install_dirty_watchers()
         self._load_configs()
+        self._loading = False
+        self._reset_dirty_state()
         self.prompt_save_if_example(self.store, self)
 
     # UI -----------------------------------------------------------------
@@ -163,7 +169,7 @@ class ConfigManagerDialog(QDialog):
 
         main_layout.addLayout(list_column, 1)
 
-        # Right column: configuration editor
+        # Right column: scrollable editor + fixed footer
         editor_container = QWidget()
         editor_layout = QVBoxLayout(editor_container)
         editor_layout.setContentsMargins(12, 8, 12, 8)
@@ -357,9 +363,12 @@ class ConfigManagerDialog(QDialog):
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setWidget(editor_container)
-        main_layout.addWidget(scroll_area, 2)
 
-        footer = QHBoxLayout()
+        right_column = QVBoxLayout()
+        right_column.addWidget(scroll_area, 1)
+
+        footer_widget = QWidget()
+        footer = QHBoxLayout(footer_widget)
         self.open_config_button = QPushButton("Open config file")
         self.open_config_button.clicked.connect(self._open_config_file)
         footer.addWidget(self.open_config_button)
@@ -370,7 +379,37 @@ class ConfigManagerDialog(QDialog):
         self.close_button = QPushButton("Close")
         self.close_button.clicked.connect(self.accept)
         footer.addWidget(self.close_button)
-        editor_layout.addLayout(footer)
+        right_column.addWidget(footer_widget, 0)
+
+        main_layout.addLayout(right_column, 2)
+
+    def _install_dirty_watchers(self) -> None:
+        self.name_input.textChanged.connect(self._on_form_modified)
+        self.note_type_selector.list_widget.itemChanged.connect(self._on_form_modified)
+
+        self.retry_section.retry_limit_input.textChanged.connect(self._on_form_modified)
+        self.retry_section.retry_delay_input.textChanged.connect(self._on_form_modified)
+
+        self.text_section.enable_checkbox.stateChanged.connect(self._on_form_modified)
+        self.image_section.enable_checkbox.stateChanged.connect(self._on_form_modified)
+        self.audio_section.enable_checkbox.stateChanged.connect(self._on_form_modified)
+
+        self.text_mapping_editor.rowsChanged.connect(self._on_form_modified)
+        self.image_mapping_editor.rowsChanged.connect(self._on_form_modified)
+        self.audio_mapping_editor.rowsChanged.connect(self._on_form_modified)
+
+        self.endpoint_input.textChanged.connect(self._on_form_modified)
+        self.model_input.textChanged.connect(self._on_form_modified)
+        self.system_prompt_input.textChanged.connect(self._on_form_modified)
+        self.user_prompt_input.textChanged.connect(self._on_form_modified)
+
+        self.image_endpoint_input.textChanged.connect(self._on_form_modified)
+        self.image_model_input.textChanged.connect(self._on_form_modified)
+
+        self.audio_endpoint_input.textChanged.connect(self._on_form_modified)
+        self.audio_model_input.textChanged.connect(self._on_form_modified)
+        self.audio_voice_input.textChanged.connect(self._on_form_modified)
+        self.audio_format_input.textChanged.connect(self._on_form_modified)
 
     # Data helpers -----------------------------------------------------
 
@@ -392,6 +431,8 @@ class ConfigManagerDialog(QDialog):
         return note_types
 
     def _load_configs(self) -> None:
+        was_loading = self._loading
+        self._loading = True
         self.config_list.clear()
         for config in self.store.list_configs():
             item = QListWidgetItem(config.name)
@@ -399,18 +440,112 @@ class ConfigManagerDialog(QDialog):
             self.config_list.addItem(item)
         if self.config_list.count():
             self.config_list.setCurrentRow(0)
+        else:
+            self._current_name = None
+            self._reset_dirty_state()
+        self._loading = was_loading
+
+    def _on_form_modified(self, *args: object) -> None:
+        if self._loading:
+            return
+        self._mark_dirty()
+
+    def _mark_dirty(self) -> None:
+        self._dirty = self._capture_form_state() != self._form_snapshot
+        self._update_dirty_ui()
+
+    def _reset_dirty_state(self) -> None:
+        self._form_snapshot = self._capture_form_state()
+        self._dirty = False
+        self._update_dirty_ui()
+
+    def _update_dirty_ui(self) -> None:
+        self.save_button.setEnabled(self._dirty)
+
+    def _capture_form_state(self) -> Dict[str, Any]:
+        text_provider = self.text_section.provider()
+        image_provider = self.image_section.provider()
+        audio_provider = self.audio_section.provider()
+        text_keys = dict(self._text_api_keys)
+        image_keys = dict(self._image_api_keys)
+        audio_keys = dict(self._audio_api_keys)
+        text_keys[text_provider[0]] = self.api_key_input.text().strip()
+        image_keys[image_provider[0]] = self.image_api_key_input.text().strip()
+        audio_keys[audio_provider[0]] = self.audio_api_key_input.text().strip()
+        return {
+            "name": self.name_input.text().strip(),
+            "note_types": tuple(sorted(self.note_type_selector.selected_ids())),
+            "retry_limit_text": self.retry_section.retry_limit_input.text().strip(),
+            "retry_delay_text": self.retry_section.retry_delay_input.text().strip(),
+            "text_enabled": self.text_section.is_enabled(),
+            "text_provider": text_provider,
+            "text_mappings": tuple(self.text_mapping_editor.get_entries()),
+            "text_api_keys": tuple(sorted(text_keys.items())),
+            "text_endpoint": self.endpoint_input.text().strip(),
+            "text_model": self.model_input.text().strip(),
+            "system_prompt": self.system_prompt_input.toPlainText().strip(),
+            "user_prompt": self.user_prompt_input.toPlainText().strip(),
+            "image_enabled": self.image_section.is_enabled(),
+            "image_provider": image_provider,
+            "image_mappings": tuple(self.image_mapping_editor.get_entries()),
+            "image_api_keys": tuple(sorted(image_keys.items())),
+            "image_endpoint": self.image_endpoint_input.text().strip(),
+            "image_model": self.image_model_input.text().strip(),
+            "audio_enabled": self.audio_section.is_enabled(),
+            "audio_provider": audio_provider,
+            "audio_mappings": tuple(self.audio_mapping_editor.get_entries()),
+            "audio_api_keys": tuple(sorted(audio_keys.items())),
+            "audio_endpoint": self.audio_endpoint_input.text().strip(),
+            "audio_model": self.audio_model_input.text().strip(),
+            "audio_voice": self.audio_voice_input.text().strip(),
+            "audio_format": self.audio_format_input.text().strip(),
+        }
+
+    def _has_unsaved_changes(self) -> bool:
+        return False if self._loading else self._dirty
+
+    def _confirm_discard_changes(self, context: str) -> bool:
+        if not self._has_unsaved_changes():
+            return True
+        response = QMessageBox.question(
+            self,
+            "放弃未保存的修改",
+            f"当前配置存在未保存的变更。确定要{context}并放弃这些修改吗？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        return response == QMessageBox.StandardButton.Yes
 
     def _on_selection_changed(
         self,
         current: Optional[QListWidgetItem],
         _previous: Optional[QListWidgetItem],
     ) -> None:
+        previous = _previous
+        if self._loading:
+            if current is None:
+                self._current_name = None
+                return
+            config: LLMConfig = current.data(Qt.ItemDataRole.UserRole)
+            self._current_name = config.name
+            self._populate_form(config)
+            self._reset_dirty_state()
+            return
+        if previous is not None and self._has_unsaved_changes():
+            if not self._confirm_discard_changes("切换配置"):
+                self.config_list.blockSignals(True)
+                self.config_list.setCurrentItem(previous)
+                self.config_list.blockSignals(False)
+                return
         if current is None:
             self._current_name = None
+            self._reset_dirty_state()
             return
         config: LLMConfig = current.data(Qt.ItemDataRole.UserRole)
         self._current_name = config.name
+        self._loading = True
         self._populate_form(config)
+        self._loading = False
+        self._reset_dirty_state()
 
     def _populate_form(self, config: LLMConfig) -> None:
         self.name_input.setText(config.name)
@@ -666,45 +801,91 @@ class ConfigManagerDialog(QDialog):
         if combo is None:
             return
         provider = str(combo.currentData() or "")
-        if provider != self._current_text_provider:
+        if self._loading:
             self._current_text_provider = provider
-            defaults = TEXT_PROVIDER_DEFAULTS.get(provider.lower())
-            if defaults is not None:
-                self._apply_text_provider_defaults(force=True)
-            self._load_text_api_key_for_current_provider()
+            self._update_text_reset_button()
+            return
+        if provider == self._current_text_provider:
+            self._update_text_reset_button()
+            return
+        if self._dirty and not self._confirm_discard_changes("切换文本提供者"):
+            self._loading = True
+            revert_index = combo.findData(self._current_text_provider)
+            if revert_index != -1:
+                combo.setCurrentIndex(revert_index)
+            self._loading = False
+            self._update_text_reset_button()
+            return
+        self._current_text_provider = provider
+        defaults = TEXT_PROVIDER_DEFAULTS.get(provider.lower())
+        if defaults is not None:
+            self._apply_text_provider_defaults(force=True)
+        self._load_text_api_key_for_current_provider()
         self._update_text_reset_button()
+        self._mark_dirty()
 
     def _on_image_provider_changed(self) -> None:
         combo = self.image_section.provider_combo
         if combo is None:
             return
         provider = str(combo.currentData() or "")
-        if provider != self._current_image_provider:
+        if self._loading:
             self._current_image_provider = provider
-            defaults = IMAGE_PROVIDER_DEFAULTS.get(provider.lower())
-            if defaults is not None:
-                self._apply_image_provider_defaults(force=True)
-            self._load_image_api_key_for_current_provider()
+            self._update_image_reset_button()
+            return
+        if provider == self._current_image_provider:
+            self._update_image_reset_button()
+            return
+        if self._dirty and not self._confirm_discard_changes("切换图像提供者"):
+            self._loading = True
+            revert_index = combo.findData(self._current_image_provider)
+            if revert_index != -1:
+                combo.setCurrentIndex(revert_index)
+            self._loading = False
+            self._update_image_reset_button()
+            return
+        self._current_image_provider = provider
+        defaults = IMAGE_PROVIDER_DEFAULTS.get(provider.lower())
+        if defaults is not None:
+            self._apply_image_provider_defaults(force=True)
+        self._load_image_api_key_for_current_provider()
         self._update_image_reset_button()
+        self._mark_dirty()
 
     def _on_audio_provider_changed(self) -> None:
         combo = self.audio_section.provider_combo
         if combo is None:
             return
         provider = str(combo.currentData() or "")
-        if provider != self._current_audio_provider:
+        if self._loading:
             self._current_audio_provider = provider
-            if provider.lower() in AUDIO_PROVIDER_DEFAULTS:
-                self._apply_audio_provider_defaults(force=True)
-                defaults = AUDIO_PROVIDER_DEFAULTS[provider.lower()]
-                voice_default = defaults.get("voice")
-                if voice_default is not None:
-                    self.audio_voice_input.setText(voice_default)
-                format_default = defaults.get("format")
-                if format_default is not None:
-                    self.audio_format_input.setText(format_default)
-            self._load_audio_api_key_for_current_provider()
+            self._update_audio_reset_button()
+            return
+        if provider == self._current_audio_provider:
+            self._update_audio_reset_button()
+            return
+        if self._dirty and not self._confirm_discard_changes("切换语音提供者"):
+            self._loading = True
+            revert_index = combo.findData(self._current_audio_provider)
+            if revert_index != -1:
+                combo.setCurrentIndex(revert_index)
+            self._loading = False
+            self._update_audio_reset_button()
+            return
+        self._current_audio_provider = provider
+        provider_key = provider.lower()
+        if provider_key in AUDIO_PROVIDER_DEFAULTS:
+            self._apply_audio_provider_defaults(force=True)
+            defaults = AUDIO_PROVIDER_DEFAULTS[provider_key]
+            voice_default = defaults.get("voice")
+            if voice_default is not None:
+                self.audio_voice_input.setText(voice_default)
+            format_default = defaults.get("format")
+            if format_default is not None:
+                self.audio_format_input.setText(format_default)
+        self._load_audio_api_key_for_current_provider()
         self._update_audio_reset_button()
+        self._mark_dirty()
 
     def _update_text_provider_state(self) -> None:
         combo = self.text_section.provider_combo
@@ -732,18 +913,21 @@ class ConfigManagerDialog(QDialog):
             return
         provider = str(self.text_section.provider_combo.currentData() or "")
         self._text_api_keys[provider] = value.strip()
+        self._on_form_modified()
 
     def _on_image_api_key_changed(self, value: str) -> None:
         if self.image_section.provider_combo is None:
             return
         provider = str(self.image_section.provider_combo.currentData() or "")
         self._image_api_keys[provider] = value.strip()
+        self._on_form_modified()
 
     def _on_audio_api_key_changed(self, value: str) -> None:
         if self.audio_section.provider_combo is None:
             return
         provider = str(self.audio_section.provider_combo.currentData() or "")
         self._audio_api_keys[provider] = value.strip()
+        self._on_form_modified()
 
     @staticmethod
     def _set_line_edit_text(line_edit: QLineEdit, value: str) -> None:
@@ -756,6 +940,8 @@ class ConfigManagerDialog(QDialog):
     # Actions ----------------------------------------------------------
 
     def _on_new(self) -> None:
+        if self._has_unsaved_changes() and not self._confirm_discard_changes("创建新配置"):
+            return
         unique_name = self.store.ensure_unique_name("Config")
         new_config = LLMConfig(name=unique_name)
         self.store.upsert(new_config)
@@ -764,6 +950,8 @@ class ConfigManagerDialog(QDialog):
 
     def _on_delete(self) -> None:
         if not self._current_name:
+            return
+        if self._has_unsaved_changes() and not self._confirm_discard_changes("删除配置"):
             return
         confirm = QMessageBox.question(
             self,
@@ -785,6 +973,7 @@ class ConfigManagerDialog(QDialog):
         self.store.upsert(config)
         self._load_configs()
         self._select_by_name(config.name)
+        self._reset_dirty_state()
 
     def _open_config_file(self) -> None:
         target_path = self.store.config_path
@@ -796,6 +985,12 @@ class ConfigManagerDialog(QDialog):
             if item.text() == name:
                 self.config_list.setCurrentRow(row)
                 break
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        if self._has_unsaved_changes() and not self._confirm_discard_changes("关闭配置管理窗口"):
+            event.ignore()
+            return
+        super().closeEvent(event)
 
     # Mapping helpers --------------------------------------------------
 

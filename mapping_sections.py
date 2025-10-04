@@ -74,6 +74,7 @@ class ToggleMappingEditor(QWidget):
         for left, right, enabled in entries:
             self.add_row(left, right, enabled)
         self._update_summary()
+        self.rowsChanged.emit()
 
     def add_row(
         self,
@@ -128,6 +129,7 @@ class ToggleMappingEditor(QWidget):
         )
         row_widget.setEnabled(self._global_enabled)
         self._update_summary()
+        self.rowsChanged.emit()
 
     def get_entries(self) -> list[tuple[str, str, bool]]:
         entries: list[tuple[str, str, bool]] = []
@@ -172,6 +174,7 @@ class ToggleMappingEditor(QWidget):
         self._rows_layout.removeWidget(widget)
         widget.deleteLater()
         self._update_summary()
+        self.rowsChanged.emit()
 
     def _clear_rows(self) -> None:
         while self._rows_layout.count():
@@ -180,9 +183,11 @@ class ToggleMappingEditor(QWidget):
             if widget is not None:
                 widget.deleteLater()
         self._rows.clear()
+        self.rowsChanged.emit()
 
     def _on_row_changed(self) -> None:
         self._update_summary()
+        self.rowsChanged.emit()
 
     def _update_summary(self) -> None:
         entries = []
@@ -257,8 +262,15 @@ class RetrySection(QGroupBox):
         self.retry_limit_input.setPlaceholderText("Retry attempts (default 50)")
         self.retry_form.addRow(QLabel("Retry Attempts:"), self.retry_limit_input)
         self.retry_delay_input = QLineEdit()
-        self.retry_delay_input.setPlaceholderText("Retry delay seconds (default 5)")
-        self.retry_form.addRow(QLabel("Retry Delay (s):"), self.retry_delay_input)
+        self.retry_delay_input.setPlaceholderText("Initial retry delay seconds (default 5)")
+        delay_label = QLabel("Initial Retry Delay (s):")
+        delay_label.setToolTip(
+            "First retry waits this many seconds. Every 10 retries, the wait time doubles."
+        )
+        self.retry_delay_input.setToolTip(
+            "First retry waits this many seconds. Every 10 retries, the wait time doubles."
+        )
+        self.retry_form.addRow(delay_label, self.retry_delay_input)
         layout.addLayout(self.retry_form)
 
     def set_values(self, retry_limit: int, retry_delay: float) -> None:

@@ -152,7 +152,7 @@ Use the <em>Speech Generation Mapping</em> section in the settings dialog to map
 - Gemini 语音接口目前仅返回 24kHz 线性 PCM，我们会自动封装为 <code>.wav</code> 文件；请把音频格式字段设置为 <code>wav</code>（或留空，插件会回落到 <code>wav</code>）。
 - The first field in each mapping provides the text to be spoken; the second field receives only the generated <code>[sound:...]</code> tag.
 - Existing field contents are preserved; the new audio tag is appended on a new line if needed.
-- Advanced: 在 Settings 底部可以设置 “Retry Attempts” 与 “Retry Delay (seconds)”（默认 50 / 5），用于控制文本、图片、语音阶段的自动重试策略。
+- Advanced: 在 Settings 底部可以设置 “Retry Attempts” 与 “初始 Retry Delay (秒)”（默认 50 / 5），用于控制文本、图片、语音阶段的自动重试策略。重试间隔会按 10 次为一组逐步翻倍，例如起始 5 秒 → 第 1–10 次等待 5 秒 → 第 11–20 次等待 10 秒，以此类推。
 
 <details>
 <summary><b>Gemini 2.5 预设音色（2025-09-30 更新）</b></summary>
@@ -165,6 +165,20 @@ Run the add-on again whenever you want to refresh the audio files after changing
 
 <em>Live verification</em>: 若需实际走通 Gemini TTS，可在仓库根目录运行 `python -m tests.speech.run_gemini_tts_sample`，或在设置了 `GEMINI_API_KEY` 与 `RUN_GEMINI_TTS_LIVE_TEST=1` 后执行 `python -m unittest tests.speech.live_gemini_tts_test`。
 </details>
+
+### Google 模型与 Endpoint 速查
+
+| 用途 | 模型名称 | 特点摘要 | REST Endpoint 示例 |
+| --- | --- | --- | --- |
+| 图像 | `gemini-2.5-flash-image` | 正式发布的 2.5 Flash 图像模型，追求高吞吐和快速响应，默认 1024×1024 输出 | `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent` |
+| 图像 | `gemini-2.5-flash-image-preview` | 预览通道，提供实验性改进（更细节/更多控制参数），接口和配额尚在调整中 | `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent` |
+| 图像 | `imagen-4.0-generate-001` | Imagen 4 标准档，写实与插画均衡，支持高分辨率（最高 2048×2048） | `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:generateContent` |
+| 图像 | `imagen-4.0-ultra-generate-001` | Imagen 4 Ultra，高保真写实效果、对复杂场景表现更好，耗时/成本相对更高 | `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-ultra-generate-001:generateContent` |
+| 图像 | `imagen-4.0-fast-generate-001` | Imagen 4 Fast，牺牲部分细节换取最低延迟与成本，适合草稿或批量生成 | `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-fast-generate-001:generateContent` |
+| 语音 | `gemini-2.5-flash-preview-tts` | Flash 语音预览，主打低延迟/实时互动，输出 24kHz PCM（插件会封装为 WAV） | `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent` |
+| 语音 | `gemini-2.5-pro-preview-tts` | Pro 语音预览，强调自然度和长文本表现，延迟略高 | `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro-preview-tts:generateContent` |
+
+> 说明：以上均基于 Google Generative Language REST API。若在设置中手动覆盖 Endpoint，请确保最终 URL 形如 `.../models/<MODEL>:generateContent`。图像调用需在请求体中设置 `"responseModalities": ["IMAGE"]`，语音则使用 `"responseModalities": ["AUDIO"]` 或附带 `speechConfig`。
 
 ## FAQ:
 

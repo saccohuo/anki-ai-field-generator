@@ -776,7 +776,8 @@ class NoteProcessor(QThread):
             except ExternalException as exc:
                 policy = self._retry_policies.get(exc.code)
                 if policy and attempt < policy.max_attempts:
-                    wait_seconds = policy.wait_seconds
+                    group = max(0, (attempt - 1) // 10)
+                    wait_seconds = policy.wait_seconds * (2 ** group)
                     attempt_text = (
                         f" attempt {attempt}/{policy.max_attempts}"
                         if policy.max_attempts

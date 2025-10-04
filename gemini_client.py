@@ -23,7 +23,7 @@ except ImportError:  # pragma: no cover - allow running outside package context
 
 class GeminiClient(LLMClient):
     SERVICE_NAME = "Google Gemini"
-    IMAGE_MODEL = "gemini-2.5-flash-image-preview"
+    IMAGE_MODEL = "gemini-2.5-flash-image"
     IMAGE_MIME_TYPE = "image/png"
 
     def __init__(self, prompt_config: PromptConfig):
@@ -133,16 +133,22 @@ class GeminiClient(LLMClient):
                 code=ErrorCode.MISSING_CREDENTIALS,
             )
 
-        image_model = (
+        raw_model = (
             model
             or getattr(self.prompt_config, "model", "")
             or self.IMAGE_MODEL
         )
+        image_model = raw_model.strip()
+        if image_model.startswith("models/"):
+            image_model = image_model.split("/", 1)[1]
 
         base_endpoint = (getattr(self.prompt_config, "endpoint", "") or "").strip()
         if base_endpoint:
-            base_endpoint = base_endpoint.rstrip("/")
-            url = f"{base_endpoint}/{image_model}:generateContent"
+            base = base_endpoint.rstrip("/")
+            if base.endswith("/models"):
+                url = f"{base}/{image_model}:generateContent"
+            else:
+                url = f"{base}/models/{image_model}:generateContent"
         else:
             url = (
                 "https://generativelanguage.googleapis.com/v1beta/models/"

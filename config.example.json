@@ -97,8 +97,8 @@
       "image_provider_api_keys": {
         "gemini": "your-gemini-key"
       },
-      "image_endpoint": "https://generativelanguage.googleapis.com/v1beta/images:generate",
-      "image_model": "models/gemini-2.0-flash-image",
+      "image_endpoint": "https://generativelanguage.googleapis.com/v1beta/models",
+      "image_model": "gemini-2.0-flash-image",
       "audio_provider": "gemini",
       "audio_prompt_mappings": [
         "_word->_wordAudio::1",

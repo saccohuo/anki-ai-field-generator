@@ -13,7 +13,7 @@ TEXT_PROVIDERS: Final[list[tuple[str, str]]] = [
 ]
 
 IMAGE_PROVIDERS: Final[list[tuple[str, str]]] = [
-    ("gemini", "Google Imagen (Nano Banana)"),
+    ("gemini", "Google Nano Banana"),
     ("openai", "OpenAI Images"),
     ("custom", "Custom"),
 ]
@@ -45,8 +45,8 @@ TEXT_PROVIDER_DEFAULTS: Final[dict[str, dict[str, str]]] = {
 
 IMAGE_PROVIDER_DEFAULTS: Final[dict[str, dict[str, str]]] = {
     "gemini": {
-        "endpoint": "https://generativelanguage.googleapis.com/v1beta",
-        "model": "models/gemini-2.5-flash-image-preview",
+        "endpoint": "https://generativelanguage.googleapis.com/v1beta/models",
+        "model": "gemini-2.5-flash-image",
     },
     "openai": {
         "endpoint": "https://api.openai.com/v1/images/generations",

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Iterable, Sequence
+from typing import Any, Dict, Iterable, Sequence, Tuple
 
 from anki.notes import Note as AnkiNote
 from aqt.qt import QSettings
@@ -44,8 +44,19 @@ class UserBaseDialog(QWidget):
         self.card_fields = sorted(
             {field for note in selected_notes for field in note.keys()}
         )
+        self._loading = True
+        self._dirty = False
+        self._initial_state: Dict[str, Any] = {}
+        self._provider_indices: Dict[str, int] = {
+            "text": -1,
+            "image": -1,
+            "audio": -1,
+        }
         self._build_ui()
+        self._install_dirty_watchers()
         self._load_from_settings()
+        self._loading = False
+        self._reset_dirty_state()
 
     # UI -----------------------------------------------------------------
 
@@ -103,7 +114,7 @@ class UserBaseDialog(QWidget):
         self.text_section.add_provider_reset_button(self.text_defaults_button)
         if self.text_section.provider_combo is not None:
             self.text_section.provider_combo.currentIndexChanged.connect(
-                lambda _: self._update_text_reset_button()
+                lambda index: self._on_provider_combo_changed("text", index)
             )
         self._update_text_reset_button()
 
@@ -159,7 +170,7 @@ class UserBaseDialog(QWidget):
         self.image_section.add_provider_reset_button(self.image_defaults_button)
         if self.image_section.provider_combo is not None:
             self.image_section.provider_combo.currentIndexChanged.connect(
-                lambda _: self._update_image_reset_button()
+                lambda index: self._on_provider_combo_changed("image", index)
             )
         self._update_image_reset_button()
 
@@ -201,7 +212,7 @@ class UserBaseDialog(QWidget):
         self.audio_section.add_provider_reset_button(self.audio_defaults_button)
         if self.audio_section.provider_combo is not None:
             self.audio_section.provider_combo.currentIndexChanged.connect(
-                lambda _: self._update_audio_reset_button()
+                lambda index: self._on_provider_combo_changed("audio", index)
             )
         self._update_audio_reset_button()
 
@@ -241,6 +252,142 @@ class UserBaseDialog(QWidget):
                 Qt.CheckState(state) == Qt.CheckState.Checked
             )
         )
+
+    def _install_dirty_watchers(self) -> None:
+        # Retry controls
+        self.retry_section.retry_limit_input.textChanged.connect(self._on_field_modified)
+        self.retry_section.retry_delay_input.textChanged.connect(self._on_field_modified)
+
+        # Section toggles
+        self.text_section.enable_checkbox.stateChanged.connect(self._on_field_modified)
+        self.image_section.enable_checkbox.stateChanged.connect(self._on_field_modified)
+        self.audio_section.enable_checkbox.stateChanged.connect(self._on_field_modified)
+
+        # Mapping editors
+        self.text_mapping_editor.rowsChanged.connect(self._on_field_modified)
+        self.image_mapping_editor.rowsChanged.connect(self._on_field_modified)
+        self.audio_mapping_editor.rowsChanged.connect(self._on_field_modified)
+
+        # Text provider inputs
+        self.api_key_input.textChanged.connect(self._on_field_modified)
+        self.endpoint_input.textChanged.connect(self._on_field_modified)
+        self.model_input.textChanged.connect(self._on_field_modified)
+        self.system_prompt_input.textChanged.connect(self._on_field_modified)
+        self.user_prompt_input.textChanged.connect(self._on_field_modified)
+
+        # Image provider inputs
+        self.image_api_key_input.textChanged.connect(self._on_field_modified)
+        self.image_endpoint_input.textChanged.connect(self._on_field_modified)
+        self.image_model_input.textChanged.connect(self._on_field_modified)
+
+        # Audio provider inputs
+        self.audio_api_key_input.textChanged.connect(self._on_field_modified)
+        self.audio_endpoint_input.textChanged.connect(self._on_field_modified)
+        self.audio_model_input.textChanged.connect(self._on_field_modified)
+        self.audio_voice_input.textChanged.connect(self._on_field_modified)
+        self.audio_format_input.textChanged.connect(self._on_field_modified)
+
+    def _on_field_modified(self, *args: object) -> None:
+        if self._loading:
+            return
+        self._mark_dirty()
+
+    def _reset_dirty_state(self) -> None:
+        self._initial_state = self._capture_state()
+        self._dirty = False
+        self._provider_indices["text"] = (
+            self.text_section.provider_combo.currentIndex()
+            if self.text_section.provider_combo is not None
+            else -1
+        )
+        self._provider_indices["image"] = (
+            self.image_section.provider_combo.currentIndex()
+            if self.image_section.provider_combo is not None
+            else -1
+        )
+        self._provider_indices["audio"] = (
+            self.audio_section.provider_combo.currentIndex()
+            if self.audio_section.provider_combo is not None
+            else -1
+        )
+
+    def _mark_dirty(self) -> None:
+        self._dirty = self._capture_state() != self._initial_state
+
+    def _capture_state(self) -> Dict[str, Any]:
+        text_provider = self.text_section.provider()
+        image_provider = self.image_section.provider()
+        audio_provider = self.audio_section.provider()
+        return {
+            "retry_limit_text": self.retry_section.retry_limit_input.text().strip(),
+            "retry_delay_text": self.retry_section.retry_delay_input.text().strip(),
+            "text_enabled": self.text_section.is_enabled(),
+            "text_provider": text_provider,
+            "text_mappings": tuple(self.text_mapping_editor.get_entries()),
+            "text_api_key": self.api_key_input.text().strip(),
+            "text_endpoint": self.endpoint_input.text().strip(),
+            "text_model": self.model_input.text().strip(),
+            "system_prompt": self.system_prompt_input.toPlainText().strip(),
+            "user_prompt": self.user_prompt_input.toPlainText().strip(),
+            "image_enabled": self.image_section.is_enabled(),
+            "image_provider": image_provider,
+            "image_mappings": tuple(self.image_mapping_editor.get_entries()),
+            "image_api_key": self.image_api_key_input.text().strip(),
+            "image_endpoint": self.image_endpoint_input.text().strip(),
+            "image_model": self.image_model_input.text().strip(),
+            "audio_enabled": self.audio_section.is_enabled(),
+            "audio_provider": audio_provider,
+            "audio_mappings": tuple(self.audio_mapping_editor.get_entries()),
+            "audio_api_key": self.audio_api_key_input.text().strip(),
+            "audio_endpoint": self.audio_endpoint_input.text().strip(),
+            "audio_model": self.audio_model_input.text().strip(),
+            "audio_voice": self.audio_voice_input.text().strip(),
+            "audio_format": self.audio_format_input.text().strip(),
+        }
+
+    def _has_unsaved_changes(self) -> bool:
+        return False if self._loading else self._dirty
+
+    def _confirm_discard_changes(self, context: str) -> bool:
+        if not self._has_unsaved_changes():
+            return True
+        response = QMessageBox.question(
+            self,
+            "放弃未保存的修改",
+            f"当前设置存在未保存的变更。确定要{context}并放弃这些修改吗？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        return response == QMessageBox.StandardButton.Yes
+
+    def _on_provider_combo_changed(self, kind: str, index: int) -> None:
+        if kind == "text":
+            combo = self.text_section.provider_combo
+            update_button = self._update_text_reset_button
+        elif kind == "image":
+            combo = self.image_section.provider_combo
+            update_button = self._update_image_reset_button
+        else:
+            combo = self.audio_section.provider_combo
+            update_button = self._update_audio_reset_button
+        if combo is None:
+            return
+        previous_index = self._provider_indices.get(kind, -1)
+        if self._loading:
+            self._provider_indices[kind] = index
+            update_button()
+            return
+        if previous_index == index:
+            update_button()
+            return
+        if self._dirty and not self._confirm_discard_changes("切换提供者"):
+            self._loading = True
+            combo.setCurrentIndex(previous_index)
+            self._loading = False
+            update_button()
+            return
+        self._provider_indices[kind] = index
+        update_button()
+        self._mark_dirty()
 
     # Data loading -----------------------------------------------------
 
@@ -398,6 +545,7 @@ class UserBaseDialog(QWidget):
         if not self._validate():
             return False
         self._persist()
+        self._reset_dirty_state()
         return True
 
     # Internal helpers -------------------------------------------------
