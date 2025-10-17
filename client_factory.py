@@ -39,13 +39,13 @@ class ClientFactory:
 
     def __init__(self, browser):
         self.browser = browser
+        self.window: Optional[MainWindow] = None
+        self.progress_dialog: Optional[ProgressDialog] = None
         self.app_settings, _ = get_settings()
         self.store = ConfigStore()
         self.notes = [browser.mw.col.get_note(note_id) for note_id in browser.selectedNotes()]
         self._note_type_lookup = self._build_note_type_lookup()
         self.active_config = self._resolve_initial_config()
-        self.window: Optional[MainWindow] = None
-        self.progress_dialog: Optional[ProgressDialog] = None
 
     # Configuration lifecycle -----------------------------------------
 
@@ -138,8 +138,9 @@ class ClientFactory:
             owner_window.hide()
 
             def restore_window() -> None:
-                if self.window is owner_window and self.window is not None:
-                    self.window.show()
+                current_window = getattr(self, "window", None)
+                if current_window is owner_window and current_window is not None:
+                    current_window.show()
 
             dialog.destroyed.connect(restore_window)
 
