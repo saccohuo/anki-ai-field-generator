@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, Iterable, Optional, Sequence
 
 from PyQt6.QtCore import Qt, QUrl
@@ -199,6 +200,11 @@ class ConfigManagerDialog(QDialog):
 
         self.note_type_selector = NoteTypeSelector(self._note_types)
         editor_layout.addWidget(self.note_type_selector)
+
+        # Auto-generate on add
+        self.auto_generate_checkbox = QCheckBox("Automatically run on newly added notes")
+        self.auto_generate_checkbox.stateChanged.connect(self._on_form_modified)
+        editor_layout.addWidget(self.auto_generate_checkbox)
 
         self.retry_section = RetrySection()
         editor_layout.addWidget(self.retry_section)
@@ -438,6 +444,7 @@ class ConfigManagerDialog(QDialog):
         self.image_section.enable_checkbox.stateChanged.connect(self._on_form_modified)
         self.audio_section.enable_checkbox.stateChanged.connect(self._on_form_modified)
         self.youglish_enable_checkbox.stateChanged.connect(self._on_form_modified)
+        self.auto_generate_checkbox.stateChanged.connect(self._on_form_modified)
 
         self.text_mapping_editor.rowsChanged.connect(self._on_form_modified)
         self.image_mapping_editor.rowsChanged.connect(self._on_form_modified)
@@ -557,6 +564,7 @@ class ConfigManagerDialog(QDialog):
             "audio_model": self.audio_model_input.text().strip(),
             "audio_voice": self.audio_voice_input.text().strip(),
             "audio_format": self.audio_format_input.text().strip(),
+            "auto_generate_on_add": self.auto_generate_checkbox.isChecked(),
             "youglish_enabled": self.youglish_enable_checkbox.isChecked(),
             "youglish_source": self.youglish_source_input.text().strip(),
             "youglish_target": self.youglish_target_input.text().strip(),
@@ -678,6 +686,7 @@ class ConfigManagerDialog(QDialog):
         self.audio_voice_input.setText(config.audio_voice or "")
         self.audio_format_input.setText(config.audio_format or "wav")
         self._update_audio_provider_state()
+        self.auto_generate_checkbox.setChecked(bool(config.auto_generate_on_add))
         self.youglish_enable_checkbox.setChecked(bool(config.youglish_enabled))
         self.youglish_source_input.setText(config.youglish_source_field or "_word")
         self.youglish_target_input.setText(config.youglish_target_field or "_youglish")
@@ -778,6 +787,7 @@ class ConfigManagerDialog(QDialog):
             enable_audio_generation=self.audio_section.is_enabled(),
             retry_limit=retry_limit,
             retry_delay=retry_delay,
+            auto_generate_on_add=self.auto_generate_checkbox.isChecked(),
             youglish_enabled=youglish_enabled,
             youglish_source_field=youglish_source,
             youglish_target_field=youglish_target,
@@ -1087,6 +1097,12 @@ class ConfigManagerDialog(QDialog):
         self._select_by_name(config.name)
         self._reset_dirty_state()
         self._update_active_badges()
+        # If saving the active config (or none was set), apply immediately so runtime uses latest values.
+        if not self._active_config_name or config.name == self._active_config_name:
+            settings, _ = get_settings()
+            self._apply_config_to_settings(settings, config)
+            self._active_config_name = config.name
+            self._update_active_badges()
 
     def _on_duplicate(self) -> None:
         if not self._current_name:
@@ -1123,9 +1139,11 @@ class ConfigManagerDialog(QDialog):
             )
             return
         settings, _ = get_settings()
-        settings.setValue(SettingsNames.CONFIG_NAME_SETTING_NAME, self._current_name)
-        self._active_config_name = self._current_name
-        self._update_active_badges()
+        config = self.store.find(self._current_name)
+        if config is not None:
+            self._apply_config_to_settings(settings, config)
+            self._active_config_name = self._current_name
+            self._update_active_badges()
         QMessageBox.information(
             self,
             "Current configuration updated",
@@ -1161,6 +1179,66 @@ class ConfigManagerDialog(QDialog):
     def _update_set_active_enabled(self) -> None:
         is_active_selected = bool(self._current_name and self._current_name == self._active_config_name)
         self.set_active_button.setEnabled(bool(self._current_name and not is_active_selected))
+
+    def _apply_config_to_settings(self, settings: QSettings, config: LLMConfig) -> None:
+        settings.setValue(SettingsNames.CONFIG_NAME_SETTING_NAME, config.name)
+        text_provider = (config.text_provider or "custom").lower()
+        text_api_key = config.text_provider_api_keys.get(text_provider, config.api_key)
+        settings.setValue(SettingsNames.API_KEY_SETTING_NAME, text_api_key)
+        settings.setValue(SettingsNames.ENDPOINT_SETTING_NAME, config.endpoint)
+        settings.setValue(SettingsNames.MODEL_SETTING_NAME, config.model)
+        settings.setValue(SettingsNames.SYSTEM_PROMPT_SETTING_NAME, config.system_prompt)
+        settings.setValue(SettingsNames.USER_PROMPT_SETTING_NAME, config.user_prompt)
+        settings.setValue(SettingsNames.RESPONSE_KEYS_SETTING_NAME, config.response_keys)
+        settings.setValue(
+            SettingsNames.DESTINATION_FIELD_SETTING_NAME,
+            config.destination_fields,
+        )
+        settings.setValue(
+            SettingsNames.TEXT_MAPPING_ENTRIES_SETTING_NAME,
+            json.dumps(config.text_mapping_entries or [], ensure_ascii=False),
+        )
+        settings.setValue(
+            SettingsNames.ENABLE_TEXT_GENERATION_SETTING_NAME,
+            config.enable_text_generation,
+        )
+        settings.setValue(
+            SettingsNames.ENABLE_IMAGE_GENERATION_SETTING_NAME,
+            config.enable_image_generation,
+        )
+        settings.setValue(
+            SettingsNames.ENABLE_AUDIO_GENERATION_SETTING_NAME,
+            config.enable_audio_generation,
+        )
+        settings.setValue(SettingsNames.RETRY_LIMIT_SETTING_NAME, config.retry_limit)
+        settings.setValue(SettingsNames.RETRY_DELAY_SETTING_NAME, config.retry_delay)
+        settings.setValue(SettingsNames.IMAGE_MAPPING_SETTING_NAME, config.image_prompt_mappings)
+        image_provider = (config.image_provider or "custom").lower()
+        image_api_key = config.image_provider_api_keys.get(image_provider, config.image_api_key)
+        settings.setValue(SettingsNames.IMAGE_API_KEY_SETTING_NAME, image_api_key)
+        settings.setValue(SettingsNames.IMAGE_ENDPOINT_SETTING_NAME, config.image_endpoint)
+        settings.setValue(SettingsNames.IMAGE_MODEL_SETTING_NAME, config.image_model)
+        settings.setValue(SettingsNames.AUDIO_MAPPING_SETTING_NAME, config.audio_prompt_mappings)
+        audio_provider = (config.audio_provider or "custom").lower()
+        audio_api_key = config.audio_provider_api_keys.get(audio_provider, config.audio_api_key)
+        settings.setValue(SettingsNames.AUDIO_API_KEY_SETTING_NAME, audio_api_key)
+        settings.setValue(SettingsNames.AUDIO_ENDPOINT_SETTING_NAME, config.audio_endpoint)
+        settings.setValue(SettingsNames.AUDIO_MODEL_SETTING_NAME, config.audio_model)
+        settings.setValue(SettingsNames.AUDIO_VOICE_SETTING_NAME, config.audio_voice)
+        settings.setValue(SettingsNames.AUDIO_FORMAT_SETTING_NAME, config.audio_format or "wav")
+        settings.setValue(SettingsNames.TEXT_PROVIDER_SETTING_NAME, config.text_provider or "custom")
+        settings.setValue(
+            SettingsNames.TEXT_PROVIDER_CUSTOM_VALUE_SETTING_NAME,
+            config.text_custom_value or "",
+        )
+        settings.setValue(SettingsNames.IMAGE_PROVIDER_SETTING_NAME, config.image_provider or "custom")
+        settings.setValue(SettingsNames.AUDIO_PROVIDER_SETTING_NAME, config.audio_provider or "custom")
+        settings.setValue(SettingsNames.YOUGLISH_ENABLED_SETTING_NAME, config.youglish_enabled)
+        settings.setValue(SettingsNames.YOUGLISH_SOURCE_FIELD_SETTING_NAME, config.youglish_source_field)
+        settings.setValue(SettingsNames.YOUGLISH_TARGET_FIELD_SETTING_NAME, config.youglish_target_field)
+        settings.setValue(SettingsNames.YOUGLISH_ACCENT_SETTING_NAME, config.youglish_accent)
+        settings.setValue(SettingsNames.YOUGLISH_OVERWRITE_SETTING_NAME, config.youglish_overwrite)
+        settings.setValue(SettingsNames.AUTO_GENERATE_ON_ADD_SETTING_NAME, config.auto_generate_on_add)
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         if self._has_unsaved_changes() and not self._confirm_discard_changes("关闭配置管理窗口"):

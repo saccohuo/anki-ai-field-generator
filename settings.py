@@ -45,6 +45,7 @@ class SettingsNames:
     YOUGLISH_TARGET_FIELD_SETTING_NAME = "youglish_target_field"
     YOUGLISH_ACCENT_SETTING_NAME = "youglish_accent"
     YOUGLISH_OVERWRITE_SETTING_NAME = "youglish_overwrite"
+    AUTO_GENERATE_ON_ADD_SETTING_NAME = "auto_generate_on_add"
 
 
 def get_settings() -> QSettings:

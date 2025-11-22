@@ -3,12 +3,14 @@ import re
 import webbrowser
 from urllib.parse import quote_plus
 
+from anki.notes import Note as AnkiNote
 from aqt import gui_hooks, mw
 from aqt.qt import QAction, QMessageBox, QMenu
 from anki import hooks
 
 from .client_factory import ClientFactory
 from .config_manager_dialog import ConfigManagerDialog
+from .prompt_config import PromptConfig
 from .settings import SettingsNames, get_settings
 
 
@@ -255,6 +257,50 @@ def _run_youglish_update(browser) -> None:
     client_factory.run_youglish_only(browser)
 
 
+def _maybe_auto_generate_on_add(note: AnkiNote) -> None:
+    """Hook: run AI generation automatically when a new note is added."""
+    settings, _ = get_settings()
+    enabled = settings.value(
+        SettingsNames.AUTO_GENERATE_ON_ADD_SETTING_NAME,
+        defaultValue=False,
+    )
+    if isinstance(enabled, str):
+        enabled = enabled.strip().lower() in {"1", "true", "yes", "on"}
+    if not enabled:
+        return
+    if ClientFactory.focus_progress_dialog():
+        return
+    mw_ref = mw
+    if mw_ref is None or getattr(mw_ref, "col", None) is None:
+        return
+    try:
+        note_id = getattr(note, "id", None)
+        if note_id is None:
+            return
+        fresh = mw_ref.col.get_note(note_id)
+        if fresh is None:
+            return
+        proxy = _NewNoteBrowserProxy(mw_ref, [fresh.id])
+        factory = ClientFactory(proxy)
+        factory.notes = [fresh]
+        factory.on_submit(proxy, factory.notes)
+    except Exception:
+        # Avoid breaking Anki add flow; errors are non-fatal here.
+        return
+
+
+class _NewNoteBrowserProxy:
+    """Minimal browser proxy to reuse ClientFactory for newly added notes."""
+
+    def __init__(self, mw_ref, note_ids: list[int]) -> None:
+        self.mw = mw_ref
+        self._note_ids = note_ids
+        self.form = getattr(mw_ref, "form", None)
+
+    def selectedNotes(self) -> list[int]:
+        return list(self._note_ids)
+
+
 def on_setup_menus(browser):
     menu = QMenu("Anki AI", browser.form.menubar)
     browser.form.menubar.addMenu(menu)
@@ -299,6 +345,7 @@ def on_will_show_context_menu(browser, menu):
 
 
 gui_hooks.browser_will_show_context_menu.append(on_will_show_context_menu)
+gui_hooks.add_cards_did_add_note.append(_maybe_auto_generate_on_add)
 
 
 def _ensure_tools_menu_entry():

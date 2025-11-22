@@ -43,6 +43,7 @@ class LLMConfig:
     enable_audio_generation: bool = True
     retry_limit: int = 3
     retry_delay: float = 5.0
+    auto_generate_on_add: bool = False
     youglish_enabled: bool = True
     youglish_source_field: str = "_word"
     youglish_target_field: str = "_youglish"
@@ -83,6 +84,7 @@ class LLMConfig:
             "enable_audio_generation": self.enable_audio_generation,
             "retry_limit": self.retry_limit,
             "retry_delay": self.retry_delay,
+            "auto_generate_on_add": self.auto_generate_on_add,
             "youglish_enabled": self.youglish_enabled,
             "youglish_source_field": self.youglish_source_field,
             "youglish_target_field": self.youglish_target_field,
@@ -125,6 +127,7 @@ class LLMConfig:
             enable_audio_generation=data.get("enable_audio_generation", True),
             retry_limit=int(data.get("retry_limit", 3)),
             retry_delay=float(data.get("retry_delay", 5.0)),
+            auto_generate_on_add=bool(data.get("auto_generate_on_add", False)),
             youglish_enabled=bool(data.get("youglish_enabled", True)),
             youglish_source_field=str(data.get("youglish_source_field", "_word") or "_word"),
             youglish_target_field=str(data.get("youglish_target_field", "_youglish") or "_youglish"),

@@ -149,6 +149,10 @@ class UserBaseDialog(QWidget):
         self.text_section.add_form_layout(text_prompt_form)
         container_layout.addWidget(self.text_section)
 
+        # Auto-generate on add -----------------------------------------
+        self.auto_generate_checkbox = QCheckBox("Automatically run on newly added notes")
+        container_layout.addWidget(self.auto_generate_checkbox)
+
         # Image generation section ------------------------------------
         self.image_mapping_editor = ToggleMappingEditor(
             [],
@@ -239,6 +243,10 @@ class UserBaseDialog(QWidget):
         self.audio_section.add_form_layout(audio_form)
         container_layout.addWidget(self.audio_section)
 
+        # Auto-generate on add -----------------------------------------
+        self.auto_generate_checkbox = QCheckBox("Automatically run on newly added notes")
+        container_layout.addWidget(self.auto_generate_checkbox)
+
         # YouGlish links -------------------------------------------------
         self.youglish_group = QGroupBox("YouGlish links")
         youglish_form = QFormLayout(self.youglish_group)
@@ -319,6 +327,8 @@ class UserBaseDialog(QWidget):
         self.youglish_target_input.textChanged.connect(self._on_field_modified)
         self.youglish_accent_combo.currentIndexChanged.connect(self._on_field_modified)
         self.youglish_overwrite_checkbox.stateChanged.connect(self._on_field_modified)
+        # Auto-generate inputs
+        self.auto_generate_checkbox.stateChanged.connect(self._on_field_modified)
 
     def _on_field_modified(self, *args: object) -> None:
         if self._loading:
@@ -376,6 +386,7 @@ class UserBaseDialog(QWidget):
             "audio_model": self.audio_model_input.text().strip(),
             "audio_voice": self.audio_voice_input.text().strip(),
             "audio_format": self.audio_format_input.text().strip(),
+            "auto_generate_on_add": self.auto_generate_checkbox.isChecked(),
             "youglish_enabled": self.youglish_enable_checkbox.isChecked(),
             "youglish_source": self.youglish_source_input.text().strip(),
             "youglish_target": self.youglish_target_input.text().strip(),
@@ -550,6 +561,11 @@ class UserBaseDialog(QWidget):
             or "custom"
         )
         self.audio_section.set_provider(audio_provider)
+
+        auto_generate = self._get_bool_setting(
+            SettingsNames.AUTO_GENERATE_ON_ADD_SETTING_NAME, False
+        )
+        self.auto_generate_checkbox.setChecked(auto_generate)
 
         youglish_enabled = self._get_bool_setting(
             SettingsNames.YOUGLISH_ENABLED_SETTING_NAME, True
@@ -760,6 +776,10 @@ class UserBaseDialog(QWidget):
         self.app_settings.setValue(
             SettingsNames.ENABLE_AUDIO_GENERATION_SETTING_NAME,
             self.audio_section.is_enabled(),
+        )
+        self.app_settings.setValue(
+            SettingsNames.AUTO_GENERATE_ON_ADD_SETTING_NAME,
+            self.auto_generate_checkbox.isChecked(),
         )
         self.app_settings.setValue(
             SettingsNames.YOUGLISH_ENABLED_SETTING_NAME,

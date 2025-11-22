@@ -306,6 +306,10 @@ class ClientFactory:
         )
         self.app_settings.setValue(SettingsNames.IMAGE_PROVIDER_SETTING_NAME, config.image_provider or "custom")
         self.app_settings.setValue(SettingsNames.AUDIO_PROVIDER_SETTING_NAME, config.audio_provider or "custom")
+        self.app_settings.setValue(
+            SettingsNames.AUTO_GENERATE_ON_ADD_SETTING_NAME,
+            config.auto_generate_on_add,
+        )
 
     def _build_note_type_lookup(self) -> Dict[str, str]:
         lookup: Dict[str, str] = {}
