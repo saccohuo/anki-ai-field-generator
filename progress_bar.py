@@ -1,4 +1,6 @@
 from collections.abc import Callable
+from pathlib import Path
+from datetime import datetime
 from typing import Optional
 from PyQt6.QtWidgets import (
     QApplication,
@@ -16,7 +18,7 @@ from PyQt6.QtGui import QTextDocument
 
 
 class ProgressDialog(QDialog):
-    def __init__(self, worker: QThread, success_callback: Callable):
+    def __init__(self, worker: QThread, success_callback: Callable, *, suppress_front: bool = False):
         super().__init__()
         self.success_callback = success_callback
         self.setWindowTitle("Processing")
@@ -38,7 +40,7 @@ class ProgressDialog(QDialog):
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.clicked.connect(self.cancel)
         self.background_button = QPushButton("后台运行")
-        self.background_button.clicked.connect(self.showMinimized)
+        self.background_button.clicked.connect(self._on_background)
         self.resume_button = QPushButton("Continue")
         self.resume_button.clicked.connect(self.resume)
         self.resume_button.hide()
@@ -69,9 +71,36 @@ class ProgressDialog(QDialog):
         conflict_handler = getattr(self.worker, "conflict_detected", None)
         if conflict_handler is not None:
             conflict_handler.connect(self.handle_conflict)
+        self.suppress_front = suppress_front
+        if suppress_front:
+            # Request minimized state before the first show to avoid activation.
+            self.setWindowState(Qt.WindowState.WindowMinimized)
+            self.setWindowFlag(Qt.WindowType.WindowDoesNotAcceptFocus, True)
+            self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+        self._log_event(
+            "dialog_init",
+            {
+                "suppress_front": suppress_front,
+                "minimized": self.isMinimized(),
+            },
+        )
         self.worker.start()
 
     def update_progress(self, value, text):
+        if getattr(self, "suppress_front", False) and not self.isMinimized():
+            try:
+                self.showMinimized()
+            except RuntimeError:
+                pass
+        self._log_event(
+            "progress",
+            {
+                "value": value,
+                "text": text,
+                "suppress_front": getattr(self, "suppress_front", False),
+                "minimized": self.isMinimized(),
+            },
+        )
         self.progress_bar.setValue(value)
         self.label.setText(text)
 
@@ -95,16 +124,21 @@ class ProgressDialog(QDialog):
         self.close_button.show()
         self.success_callback()
         if summary:
+            if getattr(self, "suppress_front", False):
+                self.hide()
+                self._safe_close()
+                return
             self.showNormal()
             self.raise_()
             self.activateWindow()
             return
         self.hide()
         self._safe_close()
+        self._log_event("complete", {"suppress_front": getattr(self, "suppress_front", False)})
 
     def error(self, text):
         self._has_error = True
-        if self.isMinimized():
+        if self.isMinimized() and not getattr(self, "suppress_front", False):
             self.showNormal()
         self.label.setText(f"<b>Error:</b> {text}")
         self.resume_button.hide()
@@ -112,6 +146,14 @@ class ProgressDialog(QDialog):
         self.cancel_button.show()
         self.background_button.hide()
         self.close_button.show()
+        self._log_event(
+            "error",
+            {
+                "text": text,
+                "suppress_front": getattr(self, "suppress_front", False),
+                "minimized": self.isMinimized(),
+            },
+        )
 
     def resume(self):
         self.resume_button.hide()
@@ -139,6 +181,19 @@ class ProgressDialog(QDialog):
         except RuntimeError:
             pass
 
+    def _on_background(self) -> None:
+        self.suppress_front = True
+        self.setWindowFlag(Qt.WindowType.WindowDoesNotAcceptFocus, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+        try:
+            self.showMinimized()
+        except RuntimeError:
+            pass
+        self._log_event(
+            "background_clicked",
+            {"suppress_front": True, "minimized": self.isMinimized()},
+        )
+
     def handle_conflict(self, payload: dict):
         if self.isMinimized():
             self.showNormal()
@@ -151,6 +206,20 @@ class ProgressDialog(QDialog):
             conflict_signal.emit(payload.get("note_id"), decision)
         if decision == "abort" and hasattr(self.worker, "requestInterruption"):
             self.worker.requestInterruption()
+        self._log_event(
+            "conflict_dialog_decision",
+            {"decision": decision, "suppress_front": getattr(self, "suppress_front", False)},
+        )
+
+    def _log_event(self, label: str, data: Optional[dict] = None) -> None:
+        log_path = Path(__file__).with_name("anki_ai_runtime.log")
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        payload = data or {}
+        try:
+            with log_path.open("a", encoding="utf-8") as handle:
+                handle.write(f"[{timestamp}] progress_dialog {label} {payload}\n")
+        except Exception:
+            pass
 
 
 class ConflictDialog(QDialog):

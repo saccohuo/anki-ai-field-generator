@@ -46,6 +46,18 @@ class SettingsNames:
     YOUGLISH_ACCENT_SETTING_NAME = "youglish_accent"
     YOUGLISH_OVERWRITE_SETTING_NAME = "youglish_overwrite"
     AUTO_GENERATE_ON_ADD_SETTING_NAME = "auto_generate_on_add"
+    SCHEDULE_ENABLED_SETTING_NAME = "schedule_enabled"
+    SCHEDULE_QUERY_SETTING_NAME = "schedule_query"
+    SCHEDULE_INTERVAL_MIN_SETTING_NAME = "schedule_interval_minutes"
+    SCHEDULE_BATCH_SIZE_SETTING_NAME = "schedule_batch_size"
+    SCHEDULE_DAILY_LIMIT_SETTING_NAME = "schedule_daily_limit"
+    SCHEDULE_NOTICE_SECONDS_SETTING_NAME = "schedule_notice_seconds"
+    SCHEDULE_NEXT_RUN_TS_SETTING_NAME = "schedule_next_run_ts"
+    SCHEDULE_DAILY_COUNT_SETTING_NAME = "schedule_daily_count"
+    AUTO_QUEUE_SILENT_SETTING_NAME = "auto_queue_silent"
+    AUTO_QUEUE_DISPLAY_FIELD = "auto_queue_display_field"
+    AUTO_QUEUE_LAST_STATUS = "auto_queue_last_status"
+    AUTO_QUEUE_LAST_TIME = "auto_queue_last_time"
 
 
 def get_settings() -> QSettings:

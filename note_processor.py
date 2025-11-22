@@ -1040,6 +1040,11 @@ class NoteProcessor(QThread):
                 return operation()
             except ExternalException as exc:
                 policy = self._retry_policies.get(exc.code)
+                if policy and exc.code == ErrorCode.RATE_LIMIT:
+                    # propagate to allow scheduler/outer layer to pause
+                    exc.attempts = attempt
+                    exc.retry_policy = policy
+                    raise
                 if policy and attempt < policy.max_attempts:
                     group = max(0, (attempt - 1) // 10)
                     wait_seconds = policy.wait_seconds * (2 ** group)

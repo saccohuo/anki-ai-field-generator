@@ -1,22 +1,29 @@
 import html
 import re
 import webbrowser
+from datetime import datetime
+from pathlib import Path
 from urllib.parse import quote_plus
+from typing import Optional
 
 from anki.notes import Note as AnkiNote
 from aqt import gui_hooks, mw
-from aqt.qt import QAction, QMessageBox, QMenu
+from aqt.qt import QAction, QMessageBox, QMenu, QTimer
 from anki import hooks
 
 from .client_factory import ClientFactory
 from .config_manager_dialog import ConfigManagerDialog
 from .prompt_config import PromptConfig
 from .settings import SettingsNames, get_settings
+from .scheduler import SchedulerManager
 
 
 _TOOLS_MENU_ACTION = None
 _TOOLS_PROGRESS_ACTION = None
 _CONFIG_ACTION_REGISTERED = False
+_AUTO_QUEUE: list[int] = []
+_AUTO_TIMER = None
+_AUTO_BACKGROUND_PREF = False
 
 
 def show_config_dialog(parent):
@@ -48,10 +55,54 @@ def _launch_client_ui(browser) -> None:
 def _show_progress_dialog(parent) -> None:
     if ClientFactory.focus_progress_dialog():
         return
+    settings, _ = get_settings()
+    from .client_factory import active_background_count
+    from .client_factory import active_bg_notes
+    bg_count = active_background_count()
+    if bg_count:
+        note_list = active_bg_notes()
+        field_name = (
+            get_settings()[0].value(
+                SettingsNames.AUTO_QUEUE_DISPLAY_FIELD,
+                defaultValue="",
+                type=str,
+            )
+            or ""
+        ).strip()
+        entries: list[str] = []
+        if mw is not None and getattr(mw, "col", None) is not None:
+            col = mw.col
+            for nid in note_list[:10]:
+                entry = str(nid)
+                if field_name:
+                    note = col.get_note(nid)
+                    if note is not None and field_name in note:
+                        val = str(note[field_name]) or ""
+                        entry = f"{entry} ({val})"
+                entries.append(entry)
+        note_text = ", ".join(entries) if entries else ", ".join(str(nid) for nid in note_list[:10])
+        extra = "…" if len(note_list) > 10 else ""
+        QMessageBox.information(
+            parent or mw,
+            "Anki AI",
+            f"后台正在处理 {bg_count} 条自动任务：\n{note_text}{extra}\n\n请稍候。",
+        )
+        return
+    last_status = settings.value(
+        SettingsNames.AUTO_QUEUE_LAST_STATUS,
+        defaultValue="No active tasks.",
+        type=str,
+    )
+    last_time = settings.value(
+        SettingsNames.AUTO_QUEUE_LAST_TIME,
+        defaultValue="",
+        type=str,
+    )
+    suffix = f"\nLast auto-run: {last_time}" if last_time else ""
     QMessageBox.information(
         parent or mw,
         "Anki AI",
-        "当前没有正在运行的批处理任务。",
+        f"当前没有正在运行的批处理任务。\n\n{last_status}{suffix}",
     )
 
 
@@ -268,25 +319,132 @@ def _maybe_auto_generate_on_add(note: AnkiNote) -> None:
         enabled = enabled.strip().lower() in {"1", "true", "yes", "on"}
     if not enabled:
         return
+    note_id = getattr(note, "id", None)
+    if note_id is None:
+        return
+    silent = _as_bool(
+        settings.value(
+            SettingsNames.AUTO_QUEUE_SILENT_SETTING_NAME,
+            defaultValue=True,
+        ),
+        default=True,
+    )
     if ClientFactory.focus_progress_dialog():
+        _AUTO_QUEUE.append(note_id)
+        _ensure_auto_timer()
         return
     mw_ref = mw
     if mw_ref is None or getattr(mw_ref, "col", None) is None:
         return
     try:
-        note_id = getattr(note, "id", None)
-        if note_id is None:
-            return
         fresh = mw_ref.col.get_note(note_id)
         if fresh is None:
             return
         proxy = _NewNoteBrowserProxy(mw_ref, [fresh.id])
         factory = ClientFactory(proxy)
         factory.notes = [fresh]
-        factory.on_submit(proxy, factory.notes)
+        factory.on_submit(
+            proxy,
+            factory.notes,
+            suppress_front=_AUTO_BACKGROUND_PREF,
+            silent=silent,
+        )
     except Exception:
         # Avoid breaking Anki add flow; errors are non-fatal here.
         return
+
+
+def _ensure_auto_timer() -> None:
+    global _AUTO_TIMER
+    if _AUTO_TIMER is None:
+        timer = QTimer(mw)
+        timer.setInterval(2000)
+        timer.timeout.connect(_drain_auto_queue)
+        _AUTO_TIMER = timer
+    if _AUTO_TIMER is not None and not _AUTO_TIMER.isActive():
+        _AUTO_TIMER.start()
+
+
+def _drain_auto_queue() -> None:
+    global _AUTO_QUEUE, _AUTO_TIMER
+    if ClientFactory.focus_progress_dialog():
+        return
+    if not _AUTO_QUEUE:
+        if _AUTO_TIMER is not None:
+            _AUTO_TIMER.stop()
+        return
+    mw_ref = mw
+    if mw_ref is None or getattr(mw_ref, "col", None) is None:
+        _AUTO_QUEUE.clear()
+        if _AUTO_TIMER is not None:
+            _AUTO_TIMER.stop()
+        return
+    note_id = _AUTO_QUEUE.pop(0)
+    fresh = mw_ref.col.get_note(note_id)
+    if fresh is None:
+        return
+    proxy = _NewNoteBrowserProxy(mw_ref, [fresh.id])
+    factory = ClientFactory(proxy)
+    factory.notes = [fresh]
+    silent = True
+    set_active_bg_notes([note_id] + list(_AUTO_QUEUE))
+    _log_auto_queue("auto_run_start", {"note_id": note_id})
+    factory.on_submit(
+        proxy,
+        factory.notes,
+        suppress_front=_AUTO_BACKGROUND_PREF,
+        silent=silent,
+    )
+    dialog = getattr(factory, "progress_dialog", None)
+    if dialog is not None:
+        if _AUTO_BACKGROUND_PREF:
+            dialog.suppress_front = True
+            dialog.hide()
+            try:
+                dialog.showMinimized()
+            except Exception:
+                pass
+        _log_auto_queue(
+            "start_dialog",
+            {
+                "note_id": note_id,
+                "suppress_front": getattr(dialog, "suppress_front", False),
+                "minimized": dialog.isMinimized(),
+            },
+        )
+        try:
+            dialog.background_button.clicked.connect(
+                lambda: (_set_auto_background_pref(), setattr(dialog, "suppress_front", True))
+            )
+        except Exception:
+            pass
+
+
+def _set_auto_background_pref() -> None:
+    global _AUTO_BACKGROUND_PREF
+    _AUTO_BACKGROUND_PREF = True
+    _log_auto_queue("set_background_pref", {"value": True})
+
+
+def _log_auto_queue(label: str, data: Optional[dict] = None) -> None:
+    log_path = Path(__file__).with_name("anki_ai_runtime.log")
+    try:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with log_path.open("a", encoding="utf-8") as fh:
+            fh.write(f"[{now}] auto_queue {label} {data or {}}\n")
+    except Exception:
+        pass
+
+
+def _as_bool(value, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    try:
+        return bool(int(value))
+    except Exception:
+        return default
 
 
 class _NewNoteBrowserProxy:
@@ -346,6 +504,7 @@ def on_will_show_context_menu(browser, menu):
 
 gui_hooks.browser_will_show_context_menu.append(on_will_show_context_menu)
 gui_hooks.add_cards_did_add_note.append(_maybe_auto_generate_on_add)
+_SCHEDULER = SchedulerManager()
 
 
 def _ensure_tools_menu_entry():

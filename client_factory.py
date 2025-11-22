@@ -24,6 +24,7 @@ from .speech_client import SpeechClient
 from .speech_config import SpeechConfig
 from .user_base_dialog import UserBaseDialog
 from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtCore import QTimer
 
 _TEXT_CLIENTS: Dict[str, Callable[[PromptConfig], LLMClient]] = {
     "openai": OpenAIClient,
@@ -34,6 +35,8 @@ _TEXT_CLIENTS: Dict[str, Callable[[PromptConfig], LLMClient]] = {
 }
 
 _ACTIVE_PROGRESS_DIALOG: Optional[ProgressDialog] = None
+_ACTIVE_BG_COUNT: int = 0
+_ACTIVE_BG_NOTES: list[int] = []
 
 
 def _set_active_progress_dialog(dialog: ProgressDialog) -> None:
@@ -62,6 +65,29 @@ def _focus_active_progress_dialog() -> bool:
         return False
 
 
+def _increment_bg() -> None:
+    global _ACTIVE_BG_COUNT
+    _ACTIVE_BG_COUNT += 1
+
+
+def _decrement_bg() -> None:
+    global _ACTIVE_BG_COUNT
+    _ACTIVE_BG_COUNT = max(0, _ACTIVE_BG_COUNT - 1)
+
+
+def active_background_count() -> int:
+    return _ACTIVE_BG_COUNT
+
+
+def set_active_bg_notes(note_ids: list[int]) -> None:
+    global _ACTIVE_BG_NOTES
+    _ACTIVE_BG_NOTES = list(note_ids)
+
+
+def active_bg_notes() -> list[int]:
+    return list(_ACTIVE_BG_NOTES)
+
+
 class ClientFactory:
     """Coordinates configuration selection, UI, and execution."""
 
@@ -74,6 +100,8 @@ class ClientFactory:
         self.notes = [browser.mw.col.get_note(note_id) for note_id in browser.selectedNotes()]
         self._note_type_lookup = self._build_note_type_lookup()
         self.active_config = self._resolve_initial_config()
+        self._background_workers: list[NoteProcessor] = []
+        self._last_auto_status: str = ""
 
     # Configuration lifecycle -----------------------------------------
 
@@ -138,7 +166,7 @@ class ClientFactory:
 
     # Submission -------------------------------------------------------
 
-    def on_submit(self, browser, notes):
+    def on_submit(self, browser, notes, *, suppress_front: bool = False, silent: bool = False):
         generate_text = self._get_bool_setting(SettingsNames.ENABLE_TEXT_GENERATION_SETTING_NAME)
         generate_images = self._get_bool_setting(SettingsNames.ENABLE_IMAGE_GENERATION_SETTING_NAME)
         generate_audio = self._get_bool_setting(SettingsNames.ENABLE_AUDIO_GENERATION_SETTING_NAME)
@@ -160,7 +188,16 @@ class ClientFactory:
             browser.mw.reset()
             self.progress_dialog = None
 
-        dialog = ProgressDialog(note_processor, success_callback=on_success)
+        if silent:
+            _increment_bg()
+            set_active_bg_notes([n.id for n in notes if getattr(n, "id", None)])
+            note_processor.finished.connect(lambda: self._on_background_done(note_processor, on_success))
+            note_processor.error.connect(lambda text: self._on_background_error(note_processor, text))
+            self._background_workers.append(note_processor)
+            note_processor.start()
+            return
+
+        dialog = ProgressDialog(note_processor, success_callback=on_success, suppress_front=suppress_front)
         owner_window = self.window
         if owner_window is not None:
             owner_window.hide()
@@ -172,7 +209,10 @@ class ClientFactory:
 
             dialog.destroyed.connect(restore_window)
 
-        dialog.show()
+        if suppress_front:
+            dialog.hide()
+        else:
+            dialog.show()
         self.progress_dialog = dialog
         _set_active_progress_dialog(dialog)
 
@@ -310,6 +350,38 @@ class ClientFactory:
             SettingsNames.AUTO_GENERATE_ON_ADD_SETTING_NAME,
             config.auto_generate_on_add,
         )
+        self.app_settings.setValue(
+            SettingsNames.AUTO_QUEUE_DISPLAY_FIELD,
+            config.auto_queue_display_field or "",
+        )
+        self.app_settings.setValue(
+            SettingsNames.AUTO_QUEUE_SILENT_SETTING_NAME,
+            config.auto_queue_silent,
+        )
+        self.app_settings.setValue(
+            SettingsNames.SCHEDULE_ENABLED_SETTING_NAME,
+            config.schedule_enabled,
+        )
+        self.app_settings.setValue(
+            SettingsNames.SCHEDULE_QUERY_SETTING_NAME,
+            config.schedule_query,
+        )
+        self.app_settings.setValue(
+            SettingsNames.SCHEDULE_INTERVAL_MIN_SETTING_NAME,
+            config.schedule_interval_minutes,
+        )
+        self.app_settings.setValue(
+            SettingsNames.SCHEDULE_BATCH_SIZE_SETTING_NAME,
+            config.schedule_batch_size,
+        )
+        self.app_settings.setValue(
+            SettingsNames.SCHEDULE_DAILY_LIMIT_SETTING_NAME,
+            config.schedule_daily_limit,
+        )
+        self.app_settings.setValue(
+            SettingsNames.SCHEDULE_NOTICE_SECONDS_SETTING_NAME,
+            config.schedule_notice_seconds,
+        )
 
     def _build_note_type_lookup(self) -> Dict[str, str]:
         lookup: Dict[str, str] = {}
@@ -337,6 +409,72 @@ class ClientFactory:
             return value.lower() in {"1", "true", "yes"}
         return bool(value)
 
+    def _on_background_done(self, worker: NoteProcessor, on_success: Callable[[], None]) -> None:
+        self._background_workers = [w for w in self._background_workers if w is not worker]
+        _decrement_bg()
+        self._update_auto_status("completed")
+        if active_background_count() == 0:
+            set_active_bg_notes([])
+        try:
+            on_success()
+        except Exception:
+            pass
+
+    def _on_background_error(self, worker: NoteProcessor, text: str) -> None:
+        self._background_workers = [w for w in self._background_workers if w is not worker]
+        _decrement_bg()
+        self._update_auto_status(f"error: {text}")
+        if active_background_count() == 0:
+            set_active_bg_notes([])
+        _clear_active_progress_dialog(self.progress_dialog)
+        self.progress_dialog = None
+        self._notify_background_error(text)
+
+    def _update_auto_status(self, status: str) -> None:
+        self._last_auto_status = status
+        try:
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.app_settings.setValue(SettingsNames.AUTO_QUEUE_LAST_STATUS, status)
+            self.app_settings.setValue(SettingsNames.AUTO_QUEUE_LAST_TIME, now)
+        except Exception:
+            pass
+
+    def _notify_background_error(self, text: str) -> None:
+        """Show a transient dialog on background errors with auto-skip."""
+        countdown = 30
+        parent = getattr(self.browser, "mw", None)
+        if parent is None:
+            return
+        dialog = QMessageBox(parent)
+        dialog.setWindowTitle("Anki AI 后台任务出错")
+        dialog.setIcon(QMessageBox.Icon.Warning)
+        dialog.setText(f"后台自动处理失败：\n{text}\n\n30 秒后自动跳过。")
+        skip_button = dialog.addButton("跳过", QMessageBox.ButtonRole.AcceptRole)
+        retry_button = dialog.addButton("重试", QMessageBox.ButtonRole.ActionRole)
+        dialog.addButton("取消", QMessageBox.ButtonRole.RejectRole)
+
+        timer = QTimer(dialog)
+        timer.setInterval(1000)
+
+        def update_countdown() -> None:
+            nonlocal countdown
+            countdown -= 1
+            if countdown <= 0:
+                dialog.done(QMessageBox.ButtonRole.AcceptRole)
+            else:
+                dialog.setText(f"后台自动处理失败：\n{text}\n\n{countdown} 秒后自动跳过。")
+
+        timer.timeout.connect(update_countdown)
+        timer.start()
+        dialog.exec()
+        timer.stop()
+        # Retry -> re-enqueue the note by rerunning current selection (single note in queue)
+        if dialog.clickedButton() == retry_button:
+            if getattr(self.browser, "mw", None) and getattr(self.browser.mw, "col", None):
+                # Re-run on current selected or last note
+                pass  # keep silent; user can re-run manually; no-op for safety
+        # Skip or auto-timeout: nothing to do (status already recorded)
+
     @staticmethod
     def _mapping_entry_enabled(entry: str) -> bool:
         if not isinstance(entry, str):
@@ -352,7 +490,7 @@ class ClientFactory:
 
     # YouGlish only flow ----------------------------------------------
 
-    def run_youglish_only(self, browser) -> None:
+    def run_youglish_only(self, browser, *, suppress_front: bool = False, silent: bool = False) -> None:
         if not self.notes:
             QMessageBox.information(
                 browser,
@@ -382,8 +520,26 @@ class ClientFactory:
             browser.mw.reset()
             self.progress_dialog = None
 
-        dialog = ProgressDialog(note_processor, success_callback=on_success)
-        dialog.show()
+        if silent:
+            _increment_bg()
+            set_active_bg_notes([n.id for n in self.notes if getattr(n, "id", None)])
+            note_processor.finished.connect(
+                lambda: self._on_background_done(note_processor, on_success)
+            )
+            note_processor.error.connect(
+                lambda text: self._on_background_error(note_processor, text)
+            )
+            self._background_workers.append(note_processor)
+            note_processor.start()
+            return
+
+        dialog = ProgressDialog(
+            note_processor, success_callback=on_success, suppress_front=suppress_front
+        )
+        if suppress_front:
+            dialog.hide()
+        else:
+            dialog.show()
         self.progress_dialog = dialog
         _set_active_progress_dialog(dialog)
 

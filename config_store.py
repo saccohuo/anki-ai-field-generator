@@ -44,6 +44,14 @@ class LLMConfig:
     retry_limit: int = 3
     retry_delay: float = 5.0
     auto_generate_on_add: bool = False
+    schedule_enabled: bool = False
+    schedule_query: str = ""
+    schedule_interval_minutes: int = 10
+    schedule_batch_size: int = 5
+    schedule_daily_limit: int = 30
+    schedule_notice_seconds: int = 30
+    auto_queue_silent: bool = True
+    auto_queue_display_field: str = ""
     youglish_enabled: bool = True
     youglish_source_field: str = "_word"
     youglish_target_field: str = "_youglish"
@@ -85,6 +93,14 @@ class LLMConfig:
             "retry_limit": self.retry_limit,
             "retry_delay": self.retry_delay,
             "auto_generate_on_add": self.auto_generate_on_add,
+            "schedule_enabled": self.schedule_enabled,
+            "schedule_query": self.schedule_query,
+            "schedule_interval_minutes": self.schedule_interval_minutes,
+            "schedule_batch_size": self.schedule_batch_size,
+            "schedule_daily_limit": self.schedule_daily_limit,
+            "schedule_notice_seconds": self.schedule_notice_seconds,
+            "auto_queue_silent": self.auto_queue_silent,
+            "auto_queue_display_field": self.auto_queue_display_field,
             "youglish_enabled": self.youglish_enabled,
             "youglish_source_field": self.youglish_source_field,
             "youglish_target_field": self.youglish_target_field,
@@ -128,6 +144,14 @@ class LLMConfig:
             retry_limit=int(data.get("retry_limit", 3)),
             retry_delay=float(data.get("retry_delay", 5.0)),
             auto_generate_on_add=bool(data.get("auto_generate_on_add", False)),
+            schedule_enabled=bool(data.get("schedule_enabled", False)),
+            schedule_query=str(data.get("schedule_query", "") or ""),
+            schedule_interval_minutes=int(data.get("schedule_interval_minutes", 10) or 10),
+            schedule_batch_size=int(data.get("schedule_batch_size", 5) or 5),
+            schedule_daily_limit=int(data.get("schedule_daily_limit", 30) or 30),
+            schedule_notice_seconds=int(data.get("schedule_notice_seconds", 30) or 30),
+            auto_queue_silent=bool(data.get("auto_queue_silent", True)),
+            auto_queue_display_field=str(data.get("auto_queue_display_field", "") or ""),
             youglish_enabled=bool(data.get("youglish_enabled", True)),
             youglish_source_field=str(data.get("youglish_source_field", "_word") or "_word"),
             youglish_target_field=str(data.get("youglish_target_field", "_youglish") or "_youglish"),

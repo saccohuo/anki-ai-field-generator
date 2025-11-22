@@ -4,7 +4,7 @@ import json
 from typing import Any, Dict, Iterable, Optional, Sequence
 
 from PyQt6.QtCore import Qt, QUrl
-from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtGui import QDesktopServices, QFont
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QVBoxLayout,
     QWidget,
+    QSpinBox,
 )
 
 try:
@@ -201,13 +202,57 @@ class ConfigManagerDialog(QDialog):
         self.note_type_selector = NoteTypeSelector(self._note_types)
         editor_layout.addWidget(self.note_type_selector)
 
-        # Auto-generate on add
+        # Auto-run on add group
+        self.auto_group, auto_form = self._create_titled_group("Auto Run on New Notes")
         self.auto_generate_checkbox = QCheckBox("Automatically run on newly added notes")
         self.auto_generate_checkbox.stateChanged.connect(self._on_form_modified)
-        editor_layout.addWidget(self.auto_generate_checkbox)
+        auto_form.addRow(self.auto_generate_checkbox)
+        self.auto_queue_display_field_input = QLineEdit()
+        self.auto_queue_display_field_input.setPlaceholderText("_word")
+        self.auto_queue_display_field_input.textChanged.connect(self._on_form_modified)
+        auto_form.addRow(QLabel("Display field (status):"), self.auto_queue_display_field_input)
+        self.auto_queue_silent_checkbox = QCheckBox("Run auto-queue silently (no popup)")
+        self.auto_queue_silent_checkbox.stateChanged.connect(self._on_form_modified)
+        auto_form.addRow(self.auto_queue_silent_checkbox)
+        editor_layout.addWidget(self.auto_group)
+
+        # Scheduled processing
+        self.schedule_group, schedule_form = self._create_titled_group("Scheduled Processing")
+        self.schedule_enable_checkbox = QCheckBox("Enable periodic processing")
+        self.schedule_enable_checkbox.stateChanged.connect(self._on_form_modified)
+        schedule_form.addRow(self.schedule_enable_checkbox)
+        self.schedule_query_input = QLineEdit()
+        self.schedule_query_input.setPlaceholderText("Anki search query (e.g. tag:ai_pending)")
+        self.schedule_query_input.textChanged.connect(self._on_form_modified)
+        schedule_form.addRow(QLabel("Search query:"), self.schedule_query_input)
+        self.schedule_interval_input = QSpinBox()
+        self.schedule_interval_input.setRange(1, 24 * 60)
+        self.schedule_interval_input.setValue(10)
+        self.schedule_interval_input.setSuffix(" min")
+        self.schedule_interval_input.valueChanged.connect(self._on_form_modified)
+        schedule_form.addRow(QLabel("Interval:"), self.schedule_interval_input)
+        self.schedule_batch_size_input = QSpinBox()
+        self.schedule_batch_size_input.setRange(1, 500)
+        self.schedule_batch_size_input.setValue(5)
+        self.schedule_batch_size_input.valueChanged.connect(self._on_form_modified)
+        schedule_form.addRow(QLabel("Max per batch:"), self.schedule_batch_size_input)
+        self.schedule_daily_limit_input = QSpinBox()
+        self.schedule_daily_limit_input.setRange(1, 5000)
+        self.schedule_daily_limit_input.setValue(30)
+        self.schedule_daily_limit_input.valueChanged.connect(self._on_form_modified)
+        schedule_form.addRow(QLabel("Daily limit:"), self.schedule_daily_limit_input)
+        self.schedule_notice_seconds_input = QSpinBox()
+        self.schedule_notice_seconds_input.setRange(0, 600)
+        self.schedule_notice_seconds_input.setValue(30)
+        self.schedule_notice_seconds_input.setSuffix(" sec")
+        self.schedule_notice_seconds_input.valueChanged.connect(self._on_form_modified)
+        schedule_form.addRow(QLabel("Pre-run warning:"), self.schedule_notice_seconds_input)
+        editor_layout.addWidget(self.schedule_group)
 
         self.retry_section = RetrySection()
         editor_layout.addWidget(self.retry_section)
+        # align YouGlish group font with retry section for consistency
+        # the group is created later; adjust after creation below
 
         # Text generation section
         self.text_mapping_editor = ToggleMappingEditor(
@@ -362,8 +407,7 @@ class ConfigManagerDialog(QDialog):
         editor_layout.addWidget(self.audio_section)
 
         # YouGlish links
-        self.youglish_group = QGroupBox("YouGlish links")
-        youglish_form = QFormLayout(self.youglish_group)
+        self.youglish_group, youglish_form = self._create_titled_group("YouGlish links")
         youglish_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         self.youglish_enable_checkbox = QCheckBox("Enable YouGlish link generation")
         self.youglish_enable_checkbox.setChecked(True)
@@ -443,12 +487,20 @@ class ConfigManagerDialog(QDialog):
         self.text_section.enable_checkbox.stateChanged.connect(self._on_form_modified)
         self.image_section.enable_checkbox.stateChanged.connect(self._on_form_modified)
         self.audio_section.enable_checkbox.stateChanged.connect(self._on_form_modified)
+        self.schedule_enable_checkbox.stateChanged.connect(self._on_form_modified)
         self.youglish_enable_checkbox.stateChanged.connect(self._on_form_modified)
         self.auto_generate_checkbox.stateChanged.connect(self._on_form_modified)
+        self.auto_queue_silent_checkbox.stateChanged.connect(self._on_form_modified)
+        self.auto_queue_display_field_input.textChanged.connect(self._on_form_modified)
 
         self.text_mapping_editor.rowsChanged.connect(self._on_form_modified)
         self.image_mapping_editor.rowsChanged.connect(self._on_form_modified)
         self.audio_mapping_editor.rowsChanged.connect(self._on_form_modified)
+        self.schedule_query_input.textChanged.connect(self._on_form_modified)
+        self.schedule_interval_input.valueChanged.connect(self._on_form_modified)
+        self.schedule_batch_size_input.valueChanged.connect(self._on_form_modified)
+        self.schedule_daily_limit_input.valueChanged.connect(self._on_form_modified)
+        self.schedule_notice_seconds_input.valueChanged.connect(self._on_form_modified)
 
         self.endpoint_input.textChanged.connect(self._on_form_modified)
         self.model_input.textChanged.connect(self._on_form_modified)
@@ -565,6 +617,14 @@ class ConfigManagerDialog(QDialog):
             "audio_voice": self.audio_voice_input.text().strip(),
             "audio_format": self.audio_format_input.text().strip(),
             "auto_generate_on_add": self.auto_generate_checkbox.isChecked(),
+            "schedule_enabled": self.schedule_enable_checkbox.isChecked(),
+            "schedule_query": self.schedule_query_input.text().strip(),
+            "schedule_interval": self.schedule_interval_input.value(),
+            "schedule_batch_size": self.schedule_batch_size_input.value(),
+            "schedule_daily_limit": self.schedule_daily_limit_input.value(),
+            "schedule_notice_seconds": self.schedule_notice_seconds_input.value(),
+            "auto_queue_display_field": self.auto_queue_display_field_input.text().strip(),
+            "auto_queue_silent": self.auto_queue_silent_checkbox.isChecked(),
             "youglish_enabled": self.youglish_enable_checkbox.isChecked(),
             "youglish_source": self.youglish_source_input.text().strip(),
             "youglish_target": self.youglish_target_input.text().strip(),
@@ -687,6 +747,14 @@ class ConfigManagerDialog(QDialog):
         self.audio_format_input.setText(config.audio_format or "wav")
         self._update_audio_provider_state()
         self.auto_generate_checkbox.setChecked(bool(config.auto_generate_on_add))
+        self.schedule_enable_checkbox.setChecked(bool(config.schedule_enabled))
+        self.schedule_query_input.setText(config.schedule_query or "")
+        self.schedule_interval_input.setValue(config.schedule_interval_minutes or 10)
+        self.schedule_batch_size_input.setValue(config.schedule_batch_size or 5)
+        self.schedule_daily_limit_input.setValue(config.schedule_daily_limit or 30)
+        self.schedule_notice_seconds_input.setValue(config.schedule_notice_seconds or 30)
+        self.auto_queue_display_field_input.setText(config.auto_queue_display_field or "")
+        self.auto_queue_silent_checkbox.setChecked(bool(config.auto_queue_silent))
         self.youglish_enable_checkbox.setChecked(bool(config.youglish_enabled))
         self.youglish_source_input.setText(config.youglish_source_field or "_word")
         self.youglish_target_input.setText(config.youglish_target_field or "_youglish")
@@ -788,6 +856,14 @@ class ConfigManagerDialog(QDialog):
             retry_limit=retry_limit,
             retry_delay=retry_delay,
             auto_generate_on_add=self.auto_generate_checkbox.isChecked(),
+            schedule_enabled=self.schedule_enable_checkbox.isChecked(),
+            schedule_query=self.schedule_query_input.text().strip(),
+            schedule_interval_minutes=self.schedule_interval_input.value(),
+            schedule_batch_size=self.schedule_batch_size_input.value(),
+            schedule_daily_limit=self.schedule_daily_limit_input.value(),
+            schedule_notice_seconds=self.schedule_notice_seconds_input.value(),
+            auto_queue_display_field=self.auto_queue_display_field_input.text().strip(),
+            auto_queue_silent=self.auto_queue_silent_checkbox.isChecked(),
             youglish_enabled=youglish_enabled,
             youglish_source_field=youglish_source,
             youglish_target_field=youglish_target,
@@ -795,6 +871,29 @@ class ConfigManagerDialog(QDialog):
             youglish_overwrite=youglish_overwrite,
         )
         return config
+
+    def _create_titled_group(self, title: str) -> tuple[QGroupBox, QFormLayout]:
+        """Create a group box with a bold, larger title and a form layout."""
+        group = QGroupBox()
+        group.setTitle("")
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(8)
+
+        title_label = QLabel(title)
+        title_font = QFont(title_label.font())
+        title_font.setPointSize(title_font.pointSize() + 2)
+        title_font.setBold(True)
+        title_label.setFont(title_font)
+        header = QHBoxLayout()
+        header.addWidget(title_label)
+        header.addStretch()
+        layout.addLayout(header)
+
+        form = QFormLayout()
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        layout.addLayout(form)
+        return group, form
 
     def _apply_text_provider_defaults(self, *, force: bool = False) -> None:
         combo = self.text_section.provider_combo
