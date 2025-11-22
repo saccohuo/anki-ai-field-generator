@@ -7,6 +7,9 @@ LOG.md
 config.yaml
 tests/
 
+# macOS Finder metadata
+.DS_Store
+
 # Local configuration generated at runtime
 config.json
 config.json.bak

@@ -5,13 +5,22 @@ from typing import Any, Callable, Iterable, Optional
 import html
 import json
 import re
+import sqlite3
 import threading
+import traceback
+from datetime import datetime
+from pathlib import Path
 
 from anki.notes import Note as AnkiNote
 from aqt.qt import QSettings
 from PyQt6.QtCore import QThread, pyqtSignal
 
 import uuid
+
+try:
+    from anki.errors import BackendError, DBError
+except Exception:  # pragma: no cover
+    BackendError = DBError = Exception
 
 from .exceptions import ErrorCode, ExternalException
 from .llm_client import LLMClient
@@ -21,6 +30,20 @@ from .settings import SettingsNames
 from .gemini_client import GeminiClient
 
 IMAGE_MAPPING_SEPARATOR = "->"
+LOG_FILE = Path(__file__).with_name("anki_ai_runtime.log")
+COLLECTION_LOCK_FRAGMENTS = (
+    "collection is locked",
+    "collection is in use",
+    "collection currently locked",
+    "collection already locked",
+    "collection busy",
+    "busy, another operation is running",
+    "another operation is running",
+    "database is locked",
+    "db is locked",
+    "database table is locked",
+    "the database file is locked",
+)
 
 
 @dataclass(frozen=True)
@@ -193,17 +216,58 @@ class NoteProcessor(QThread):
         self._note_progress: dict[int, dict[str, Any]] = {}
         self._snapshots = self._build_initial_snapshots()
         self._initialize_note_progress()
+        self._collection_retry_limit = 120
+        self._collection_retry_delay = 0.5
+        self._completed_successfully = False
+        self._had_error = False
+        self._note_errors: list[str] = []
+        self.note_error_summary: str = ""
+        self._json_parse_retry_limit = 3
 
     def run(self) -> None:
+        self._log_event(f"NoteProcessor started; total_notes={self.total_items}")
+        try:
+            self._process_notes()
+            if (
+                not self._completed_successfully
+                and not self.cancelled
+                and not self._had_error
+            ):
+                message = (
+                    f"任务未能完成全部笔记（已完成 {self.current_index}/{self.total_items}）。\n"
+                    f"请查看日志获取详情：{LOG_FILE}"
+                )
+                self._emit_plain_error(message)
+                return
+        except ExternalException as exc:
+            self._emit_stage_error("Processing", exc)
+        except Exception as exc:  # pragma: no cover
+            self._log_event("NoteProcessor crashed with unexpected error.", exc=exc)
+            message = (
+                f"任务异常退出：{exc}\n"
+                f"请查看日志获取更多信息：{LOG_FILE}"
+            )
+            self.error.emit(message)
+        finally:
+            status = "cancelled" if self.cancelled else "completed"
+            self._log_event(f"NoteProcessor finished with status={status}")
+
+    def _process_notes(self) -> None:
         for i in range(self.current_index, self.total_items):
             if self.isInterruptionRequested():
                 self.cancelled = True
+                self._log_event("Processing interrupted externally; stopping thread.")
                 return
             note = self.notes[self.current_index]
-            refreshed_note = note.col.get_note(note.id)
-            if refreshed_note is not None:
-                note = refreshed_note
-                self.notes[self.current_index] = note
+            refresh_progress = int((i / self.total_items) * 100) if self.total_items else 0
+            note = self._refresh_note_reference(
+                note,
+                progress_value=refresh_progress,
+            )
+            self.notes[self.current_index] = note
+            self._log_event(
+                f"Processing note {i + 1}/{self.total_items} (note_id={getattr(note, 'id', 'unknown')})."
+            )
             note_state = self._note_progress.setdefault(
                 note.id, self._create_note_state()
             )
@@ -219,17 +283,39 @@ class NoteProcessor(QThread):
             )
 
             if self._enable_text_generation and not note_state["text"]:
-                try:
-                    response = self._run_with_retry(
-                        lambda: self.client.call([prompt_preview]),
-                        "Text generation",
-                        progress_value=int(base_progress),
-                    )
-                except ExternalException as exc:
-                    self.error.emit(
-                        self._format_error_message("Text generation", exc)
-                    )
-                    return
+                skip_note = False
+                response = None
+                json_retry_attempt = 0
+                while True:
+                    try:
+                        response = self._run_with_retry(
+                            lambda: self.client.call([prompt_preview]),
+                            "Text generation",
+                            progress_value=int(base_progress),
+                        )
+                        break
+                    except ExternalException as exc:
+                        if (
+                            self._is_json_parse_error(exc)
+                            and json_retry_attempt + 1 < self._json_parse_retry_limit
+                        ):
+                            json_retry_attempt += 1
+                            self._report_json_retry(
+                                note,
+                                json_retry_attempt,
+                                self._json_parse_retry_limit,
+                                exc,
+                            )
+                            continue
+                        if self._should_skip_note_error("text", exc):
+                            self._record_note_error(note, "文本生成", exc)
+                            self.current_index += 1
+                            skip_note = True
+                            break
+                        self._emit_stage_error("Text generation", exc)
+                        return
+                if skip_note or response is None:
+                    continue
 
                 text_new_values = {
                     note_field: response[response_key]
@@ -256,15 +342,19 @@ class NoteProcessor(QThread):
                         skip_text = True
                         self._update_snapshot_section(note, "text", text_fields)
                     elif decision == "abort":
-                        self.error.emit("Processing cancelled by user.")
+                        self._emit_plain_error("Processing cancelled by user.")
                         return
                 if not skip_text:
                     for field_name, value in text_new_values.items():
                         note[field_name] = value
-                    self._commit_note_sections(
-                        note,
-                        [("text", text_fields)],
-                    )
+                    try:
+                        self._commit_note_sections(
+                            note,
+                            [("text", text_fields)],
+                        )
+                    except ExternalException as exc:
+                        self._emit_stage_error("Saving text fields", exc)
+                        return
                 note_state["text"] = True
             else:
                 note_state["text"] = True
@@ -288,14 +378,16 @@ class NoteProcessor(QThread):
                         )
                         self.notes[self.current_index] = note
                         if image_fields:
-                            self._commit_note_sections(
-                                note,
-                                [("image", image_fields)],
-                            )
+                            try:
+                                self._commit_note_sections(
+                                    note,
+                                    [("image", image_fields)],
+                                )
+                            except ExternalException as exc:
+                                self._emit_stage_error("Saving image fields", exc)
+                                return
                     except ExternalException as exc:
-                        self.error.emit(
-                            self._format_error_message("Image generation", exc)
-                        )
+                        self._emit_stage_error("Image generation", exc)
                         return
                 else:
                     for mapping in self.image_field_mappings:
@@ -323,14 +415,16 @@ class NoteProcessor(QThread):
                         )
                         self.notes[self.current_index] = note
                         if audio_fields:
-                            self._commit_note_sections(
-                                note,
-                                [("audio", audio_fields)],
-                            )
+                            try:
+                                self._commit_note_sections(
+                                    note,
+                                    [("audio", audio_fields)],
+                                )
+                            except ExternalException as exc:
+                                self._emit_stage_error("Saving audio fields", exc)
+                                return
                     except ExternalException as exc:
-                        self.error.emit(
-                            self._format_error_message("Speech generation", exc)
-                        )
+                        self._emit_stage_error("Speech generation", exc)
                         return
                 else:
                     for mapping in self.audio_field_mappings:
@@ -348,6 +442,8 @@ class NoteProcessor(QThread):
         if self.total_items == 1:
             self.progress_updated.emit(100, "Completed")
 
+        self._finalize_note_errors()
+        self._completed_successfully = True
         self.finished.emit()
 
     def _apply_speech_generation(
@@ -819,6 +915,17 @@ class NoteProcessor(QThread):
             summary = f"{summary}\n{guidance}"
         return summary
 
+    def _emit_stage_error(self, stage_label: str, exc: ExternalException) -> None:
+        self._had_error = True
+        message = self._format_error_message(stage_label, exc)
+        self._log_event(message, exc=exc)
+        self.error.emit(message)
+
+    def _emit_plain_error(self, text: str) -> None:
+        self._had_error = True
+        self._log_event(text)
+        self.error.emit(text)
+
     def _check_for_conflicts(
         self,
         note: AnkiNote,
@@ -826,7 +933,7 @@ class NoteProcessor(QThread):
         fields: Iterable[str],
         generated_values: Optional[dict[str, str]] = None,
     ) -> tuple[AnkiNote, dict[str, dict[str, str]]]:
-        latest = note.col.get_note(note.id) or note
+        latest = self._refresh_note_reference(note)
         snapshot_section = (
             self._snapshots.get(note.id, {}).get(section, {})
             if note.id in self._snapshots
@@ -901,6 +1008,173 @@ class NoteProcessor(QThread):
                 sections_list.append((section, field_list))
         if not sections_list:
             return
-        note.col.update_note(note)
+        collection = getattr(note, "col", None)
+        if collection is None:
+            return
+        self._with_collection_retry(
+            lambda: collection.update_note(note),
+            "写入笔记",
+            progress_value=self._current_progress_value(),
+        )
         for section, fields in sections_list:
             self._update_snapshot_section(note, section, fields)
+
+    def _refresh_note_reference(
+        self,
+        note: AnkiNote,
+        *,
+        progress_value: Optional[int] = None,
+    ) -> AnkiNote:
+        collection = getattr(note, "col", None)
+        if collection is None:
+            return note
+
+        def _fetch_note() -> Optional[AnkiNote]:
+            return collection.get_note(note.id)
+
+        refreshed = self._with_collection_retry(
+            _fetch_note,
+            "同步笔记",
+            progress_value=progress_value,
+        )
+        return refreshed or note
+
+    def _current_progress_value(self) -> int:
+        if not self.total_items:
+            return 0
+        percentage = (self.current_index / self.total_items) * 100
+        return max(0, min(99, int(percentage)))
+
+    def _with_collection_retry(
+        self,
+        operation: Callable[[], Any],
+        stage_label: str,
+        *,
+        progress_value: Optional[int] = None,
+    ) -> Any:
+        attempt = 0
+        while True:
+            try:
+                return operation()
+            except ExternalException:
+                raise
+            except Exception as exc:
+                if not self._is_collection_lock_error(exc):
+                    raise
+                attempt += 1
+                self._log_event(
+                    f"{stage_label} waiting for collection lock release (attempt {attempt}).",
+                    exc=exc,
+                )
+                if attempt >= self._collection_retry_limit:
+                    raise ExternalException(
+                        "Anki 正在执行其它操作（例如添加或同步）。待其完成后再重试。",
+                        code=ErrorCode.CONNECTION,
+                    ) from exc
+                wait_seconds = self._collection_retry_delay
+                progress = (
+                    progress_value
+                    if progress_value is not None
+                    else self._current_progress_value()
+                )
+                self.progress_updated.emit(
+                    progress,
+                    f"{stage_label} 暂停，正在等待 Anki 完成其它操作…",
+                )
+                QThread.msleep(int(wait_seconds * 1000))
+        # unreachable
+
+    def _is_collection_lock_error(self, exc: Exception) -> bool:
+        if isinstance(exc, (BackendError, DBError)):
+            message = str(exc).lower()
+            return any(fragment in message for fragment in COLLECTION_LOCK_FRAGMENTS)
+        if isinstance(exc, sqlite3.OperationalError):
+            return "locked" in str(exc).lower()
+        message = str(exc).lower()
+        return bool(message) and any(
+            fragment in message for fragment in COLLECTION_LOCK_FRAGMENTS
+        )
+
+    def _log_event(self, message: str, *, exc: Optional[BaseException] = None) -> None:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        entry_lines = [f"[{timestamp}] {message}"]
+        if exc is not None:
+            entry_lines.append(f"Exception: {exc}")
+        entry = " ".join(entry_lines) + "\n"
+        try:
+            with LOG_FILE.open("a", encoding="utf-8") as handle:
+                handle.write(entry)
+                if exc is not None:
+                    traceback.print_exception(
+                        exc.__class__,
+                        exc,
+                        exc.__traceback__,
+                        file=handle,
+                    )
+        except Exception:
+            pass
+
+    def _should_skip_note_error(self, stage: str, exc: ExternalException) -> bool:
+        if stage != "text":
+            return False
+        return self._is_json_parse_error(exc)
+
+    def _record_note_error(
+        self,
+        note: AnkiNote,
+        stage_label: str,
+        exc: ExternalException,
+    ) -> None:
+        note_id = getattr(note, "id", "unknown")
+        message = (
+            f"笔记 {note_id} 在 {stage_label} 阶段失败，已跳过：{exc}"
+        )
+        self._note_errors.append(message)
+        self._log_event(message, exc=exc)
+        self.progress_updated.emit(
+            min(99, max(0, self._current_progress_value())),
+            message,
+        )
+
+    def _finalize_note_errors(self) -> None:
+        if not self._note_errors:
+            self.note_error_summary = ""
+            return
+        summary = (
+            f"处理完成，但有 {len(self._note_errors)} 张笔记失败并被跳过。"
+            f"详情请查看 {LOG_FILE.name}。"
+        )
+        self.note_error_summary = summary
+        self._log_event(summary)
+
+    def _is_json_parse_error(self, exc: ExternalException) -> bool:
+        if exc.code != ErrorCode.BAD_REQUEST:
+            return False
+        text = str(exc).lower()
+        markers = (
+            "could not parse json",
+            "did not return valid json",
+            "unexpected openai-style response shape",
+            "response must be a json object",
+            "returned invalid json",
+        )
+        return any(marker in text for marker in markers)
+
+    def _report_json_retry(
+        self,
+        note: AnkiNote,
+        attempt: int,
+        total_attempts: int,
+        exc: ExternalException,
+    ) -> None:
+        note_id = getattr(note, "id", "unknown")
+        message = (
+            f"笔记 {note_id} 文本生成返回非法 JSON，正在重试 "
+            f"{attempt}/{total_attempts - 1} ..."
+        )
+        self._log_event(message, exc=exc)
+        self.progress_updated.emit(
+            min(99, max(0, self._current_progress_value())),
+            message,
+        )
+        QThread.msleep(250)

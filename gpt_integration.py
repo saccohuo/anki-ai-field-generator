@@ -7,6 +7,7 @@ from .config_manager_dialog import ConfigManagerDialog
 
 
 _TOOLS_MENU_ACTION = None
+_TOOLS_PROGRESS_ACTION = None
 _CONFIG_ACTION_REGISTERED = False
 
 
@@ -27,6 +28,16 @@ def _launch_client_ui(browser) -> None:
     client_factory.show()
 
 
+def _show_progress_dialog(parent) -> None:
+    if ClientFactory.focus_progress_dialog():
+        return
+    QMessageBox.information(
+        parent or mw,
+        "Anki AI",
+        "当前没有正在运行的批处理任务。",
+    )
+
+
 def on_setup_menus(browser):
     menu = QMenu("Anki AI", browser.form.menubar)
     browser.form.menubar.addMenu(menu)
@@ -37,6 +48,10 @@ def on_setup_menus(browser):
     settings_action = QAction("Manage AI Configurations", mw)
     settings_action.triggered.connect(lambda: show_config_dialog(browser))
     menu.addAction(settings_action)
+
+    progress_action = QAction("显示运行中的任务", mw)
+    progress_action.triggered.connect(lambda: _show_progress_dialog(browser))
+    menu.addAction(progress_action)
 
 
 hooks.addHook("browser.setupMenus", on_setup_menus)
@@ -53,15 +68,19 @@ gui_hooks.browser_will_show_context_menu.append(on_will_show_context_menu)
 
 
 def _ensure_tools_menu_entry():
-    global _TOOLS_MENU_ACTION
-    if _TOOLS_MENU_ACTION is not None:
-        return
+    global _TOOLS_MENU_ACTION, _TOOLS_PROGRESS_ACTION
     if mw is None or mw.form is None:
         return
-    action = QAction("Anki AI Configuration", mw)
-    action.triggered.connect(lambda: show_config_dialog(mw))
-    mw.form.menuTools.addAction(action)
-    _TOOLS_MENU_ACTION = action
+    if _TOOLS_MENU_ACTION is None:
+        action = QAction("Anki AI Configuration", mw)
+        action.triggered.connect(lambda: show_config_dialog(mw))
+        mw.form.menuTools.addAction(action)
+        _TOOLS_MENU_ACTION = action
+    if _TOOLS_PROGRESS_ACTION is None:
+        progress_action = QAction("Show Anki AI Task Progress", mw)
+        progress_action.triggered.connect(lambda: _show_progress_dialog(mw))
+        mw.form.menuTools.addAction(progress_action)
+        _TOOLS_PROGRESS_ACTION = progress_action
 
 
 def _ensure_addon_manager_action():

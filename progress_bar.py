@@ -83,13 +83,22 @@ class ProgressDialog(QDialog):
         if self._has_error:
             return
         self.progress_bar.setValue(100)
-        self.label.setText("Processing complete!")
+        summary = getattr(self.worker, "note_error_summary", "") or ""
+        if summary:
+            self.label.setText(summary)
+        else:
+            self.label.setText("Processing complete!")
         self.cancel_button.hide()
         self.resume_button.hide()
-        self.copy_button.hide()
+        self.copy_button.setVisible(bool(summary))
         self.background_button.hide()
         self.close_button.show()
         self.success_callback()
+        if summary:
+            self.showNormal()
+            self.raise_()
+            self.activateWindow()
+            return
         self.hide()
         self._safe_close()
 

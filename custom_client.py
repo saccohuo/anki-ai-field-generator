@@ -57,6 +57,12 @@ class CustomLLMClient(LLMClient):
                 code=ErrorCode.CONNECTION,
             ) from exc
 
+        if response.status_code >= 500:
+            raise ExternalException(
+                "Custom endpoint returned a server error: "
+                f"{response.status_code} {response.reason}\n{response.text}",
+                code=ErrorCode.CONNECTION,
+            )
         if response.status_code >= 400:
             raise ExternalException(
                 "Custom endpoint returned an error: "

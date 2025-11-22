@@ -33,6 +33,34 @@ _TEXT_CLIENTS: Dict[str, Callable[[PromptConfig], LLMClient]] = {
     "custom": CustomLLMClient,
 }
 
+_ACTIVE_PROGRESS_DIALOG: Optional[ProgressDialog] = None
+
+
+def _set_active_progress_dialog(dialog: ProgressDialog) -> None:
+    global _ACTIVE_PROGRESS_DIALOG
+    _ACTIVE_PROGRESS_DIALOG = dialog
+
+
+def _clear_active_progress_dialog(dialog: Optional[ProgressDialog] = None) -> None:
+    global _ACTIVE_PROGRESS_DIALOG
+    if dialog is None or _ACTIVE_PROGRESS_DIALOG is dialog:
+        _ACTIVE_PROGRESS_DIALOG = None
+
+
+def _focus_active_progress_dialog() -> bool:
+    dialog = _ACTIVE_PROGRESS_DIALOG
+    if dialog is None:
+        return False
+    try:
+        if getattr(dialog, "isMinimized", None) and dialog.isMinimized():
+            dialog.showNormal()
+        dialog.raise_()
+        dialog.activateWindow()
+        return True
+    except RuntimeError:
+        _clear_active_progress_dialog(dialog)
+        return False
+
 
 class ClientFactory:
     """Coordinates configuration selection, UI, and execution."""
@@ -146,9 +174,12 @@ class ClientFactory:
 
         dialog.show()
         self.progress_dialog = dialog
+        _set_active_progress_dialog(dialog)
 
         def clear_dialog_reference() -> None:
-            setattr(self, "progress_dialog", None)
+            if getattr(self, "progress_dialog", None) is dialog:
+                setattr(self, "progress_dialog", None)
+            _clear_active_progress_dialog(dialog)
 
         dialog.destroyed.connect(clear_dialog_reference)
 
@@ -290,6 +321,10 @@ class ClientFactory:
             _, flag = entry.rsplit("::", 1)
             return flag.strip().lower() not in {"0", "false"}
         return True
+
+    @staticmethod
+    def focus_progress_dialog() -> bool:
+        return _focus_active_progress_dialog()
 
 
 __all__ = ["ClientFactory"]
