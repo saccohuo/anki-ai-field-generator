@@ -6,6 +6,8 @@ from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
+    QComboBox,
     QDialog,
     QFormLayout,
     QGroupBox,
@@ -37,6 +39,7 @@ from .provider_options import (
     TEXT_PROVIDERS,
     TEXT_PROVIDER_DEFAULTS,
 )
+from .settings import SettingsNames, get_settings
 from .user_base_dialog import IMAGE_MAPPING_SEPARATOR
 
 
@@ -122,12 +125,13 @@ class NoteTypeSelector(QGroupBox):
 class ConfigManagerDialog(QDialog):
     """Dialog allowing users to maintain multiple LLM configurations."""
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: Optional[QWidget] = None, selected_config: Optional[str] = None):
         super().__init__(parent)
         self.setWindowTitle("Manage LLM Configurations")
         self.resize(900, 560)
         self.store = ConfigStore()
         self._current_name: Optional[str] = None
+        self._initial_selection: Optional[str] = selected_config
         self._note_types = self._load_note_types()
         self._current_text_provider: str = ""
         self._current_image_provider: str = ""
@@ -138,6 +142,14 @@ class ConfigManagerDialog(QDialog):
         self._loading = True
         self._dirty = False
         self._form_snapshot: Dict[str, Any] = {}
+        self._active_config_name: Optional[str] = (
+            get_settings()[0].value(
+                SettingsNames.CONFIG_NAME_SETTING_NAME,
+                defaultValue="",
+                type=str,
+            )
+            or None
+        )
 
         self._build_ui()
         self._install_dirty_watchers()
@@ -161,6 +173,9 @@ class ConfigManagerDialog(QDialog):
         self.new_button = QPushButton("New")
         self.new_button.clicked.connect(self._on_new)
         list_buttons.addWidget(self.new_button)
+        self.duplicate_button = QPushButton("Duplicate")
+        self.duplicate_button.clicked.connect(self._on_duplicate)
+        list_buttons.addWidget(self.duplicate_button)
         self.delete_button = QPushButton("Delete")
         self.delete_button.clicked.connect(self._on_delete)
         list_buttons.addWidget(self.delete_button)
@@ -340,6 +355,31 @@ class ConfigManagerDialog(QDialog):
         self.audio_section.add_form_layout(audio_form)
         editor_layout.addWidget(self.audio_section)
 
+        # YouGlish links
+        self.youglish_group = QGroupBox("YouGlish links")
+        youglish_form = QFormLayout(self.youglish_group)
+        youglish_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        self.youglish_enable_checkbox = QCheckBox("Enable YouGlish link generation")
+        self.youglish_enable_checkbox.setChecked(True)
+        self.youglish_enable_checkbox.stateChanged.connect(
+            lambda _: self._update_youglish_enabled_state()
+        )
+        youglish_form.addRow(self.youglish_enable_checkbox)
+        self.youglish_source_input = QLineEdit()
+        self.youglish_source_input.setPlaceholderText("_word")
+        youglish_form.addRow(QLabel("Source field:"), self.youglish_source_input)
+        self.youglish_target_input = QLineEdit()
+        self.youglish_target_input.setPlaceholderText("_youglish")
+        youglish_form.addRow(QLabel("Target field:"), self.youglish_target_input)
+        self.youglish_accent_combo = QComboBox()
+        self.youglish_accent_combo.addItem("US", "us")
+        self.youglish_accent_combo.addItem("UK", "uk")
+        self.youglish_accent_combo.addItem("Australia", "aus")
+        youglish_form.addRow(QLabel("Accent:"), self.youglish_accent_combo)
+        self.youglish_overwrite_checkbox = QCheckBox("Always overwrite existing value")
+        youglish_form.addRow(self.youglish_overwrite_checkbox)
+        editor_layout.addWidget(self.youglish_group)
+
         self.text_section.enable_checkbox.stateChanged.connect(
             lambda state: self.text_mapping_editor.set_global_enabled(
                 Qt.CheckState(state) == Qt.CheckState.Checked
@@ -359,6 +399,7 @@ class ConfigManagerDialog(QDialog):
         self.text_mapping_editor.set_global_enabled(self.text_section.is_enabled())
         self.image_mapping_editor.set_global_enabled(self.image_section.is_enabled())
         self.audio_mapping_editor.set_global_enabled(self.audio_section.is_enabled())
+        self._update_youglish_enabled_state()
 
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
@@ -373,6 +414,9 @@ class ConfigManagerDialog(QDialog):
         self.open_config_button.clicked.connect(self._open_config_file)
         footer.addWidget(self.open_config_button)
         footer.addStretch()
+        self.set_active_button = QPushButton("Set as current")
+        self.set_active_button.clicked.connect(self._on_set_active)
+        footer.addWidget(self.set_active_button)
         self.save_button = QPushButton("Save")
         self.save_button.clicked.connect(self._on_save)
         footer.addWidget(self.save_button)
@@ -393,6 +437,7 @@ class ConfigManagerDialog(QDialog):
         self.text_section.enable_checkbox.stateChanged.connect(self._on_form_modified)
         self.image_section.enable_checkbox.stateChanged.connect(self._on_form_modified)
         self.audio_section.enable_checkbox.stateChanged.connect(self._on_form_modified)
+        self.youglish_enable_checkbox.stateChanged.connect(self._on_form_modified)
 
         self.text_mapping_editor.rowsChanged.connect(self._on_form_modified)
         self.image_mapping_editor.rowsChanged.connect(self._on_form_modified)
@@ -410,6 +455,10 @@ class ConfigManagerDialog(QDialog):
         self.audio_model_input.textChanged.connect(self._on_form_modified)
         self.audio_voice_input.textChanged.connect(self._on_form_modified)
         self.audio_format_input.textChanged.connect(self._on_form_modified)
+        self.youglish_source_input.textChanged.connect(self._on_form_modified)
+        self.youglish_target_input.textChanged.connect(self._on_form_modified)
+        self.youglish_accent_combo.currentIndexChanged.connect(self._on_form_modified)
+        self.youglish_overwrite_checkbox.stateChanged.connect(self._on_form_modified)
 
     # Data helpers -----------------------------------------------------
 
@@ -430,6 +479,9 @@ class ConfigManagerDialog(QDialog):
         note_types.sort(key=lambda item: item[1].lower())
         return note_types
 
+    def _is_active_config(self, name: str) -> bool:
+        return bool(name and name == (self._active_config_name or ""))
+
     def _load_configs(self) -> None:
         was_loading = self._loading
         self._loading = True
@@ -437,12 +489,18 @@ class ConfigManagerDialog(QDialog):
         for config in self.store.list_configs():
             item = QListWidgetItem(config.name)
             item.setData(Qt.ItemDataRole.UserRole, config)
+            if self._is_active_config(config.name):
+                item.setText(f"✓ {config.name}")
             self.config_list.addItem(item)
         if self.config_list.count():
-            self.config_list.setCurrentRow(0)
+            if self._initial_selection:
+                self._select_by_name(self._initial_selection)
+            else:
+                self.config_list.setCurrentRow(0)
         else:
             self._current_name = None
             self._reset_dirty_state()
+        self._update_active_badges()
         self._loading = was_loading
 
     def _on_form_modified(self, *args: object) -> None:
@@ -499,6 +557,12 @@ class ConfigManagerDialog(QDialog):
             "audio_model": self.audio_model_input.text().strip(),
             "audio_voice": self.audio_voice_input.text().strip(),
             "audio_format": self.audio_format_input.text().strip(),
+            "youglish_enabled": self.youglish_enable_checkbox.isChecked(),
+            "youglish_source": self.youglish_source_input.text().strip(),
+            "youglish_target": self.youglish_target_input.text().strip(),
+            "youglish_accent": self.youglish_accent_combo.currentData(),
+            "youglish_overwrite": self.youglish_overwrite_checkbox.isChecked(),
+            "active_config": self._active_config_name,
         }
 
     def _has_unsaved_changes(self) -> bool:
@@ -546,6 +610,7 @@ class ConfigManagerDialog(QDialog):
         self._populate_form(config)
         self._loading = False
         self._reset_dirty_state()
+        self._update_active_badges()
 
     def _populate_form(self, config: LLMConfig) -> None:
         self.name_input.setText(config.name)
@@ -613,6 +678,12 @@ class ConfigManagerDialog(QDialog):
         self.audio_voice_input.setText(config.audio_voice or "")
         self.audio_format_input.setText(config.audio_format or "wav")
         self._update_audio_provider_state()
+        self.youglish_enable_checkbox.setChecked(bool(config.youglish_enabled))
+        self.youglish_source_input.setText(config.youglish_source_field or "_word")
+        self.youglish_target_input.setText(config.youglish_target_field or "_youglish")
+        self._select_youglish_accent(config.youglish_accent or "us")
+        self.youglish_overwrite_checkbox.setChecked(bool(config.youglish_overwrite))
+        self._update_youglish_enabled_state()
 
     def _decode_text_entries(
         self, entries: Sequence[dict[str, object]] | None
@@ -642,6 +713,19 @@ class ConfigManagerDialog(QDialog):
             if enabled and key and field:
                 response_keys.append(key)
                 destination_fields.append(field)
+
+        youglish_enabled = self.youglish_enable_checkbox.isChecked()
+        youglish_source = self.youglish_source_input.text().strip() or "_word"
+        youglish_target = self.youglish_target_input.text().strip() or "_youglish"
+        youglish_accent = str(self.youglish_accent_combo.currentData() or "us")
+        youglish_overwrite = self.youglish_overwrite_checkbox.isChecked()
+        if youglish_enabled and (not youglish_source or not youglish_target):
+            QMessageBox.warning(
+                self,
+                "Missing YouGlish fields",
+                "Enable YouGlish requires both source and target fields.",
+            )
+            return None
 
         image_rows = self.image_mapping_editor.get_entries()
         audio_rows = self.audio_mapping_editor.get_entries()
@@ -694,6 +778,11 @@ class ConfigManagerDialog(QDialog):
             enable_audio_generation=self.audio_section.is_enabled(),
             retry_limit=retry_limit,
             retry_delay=retry_delay,
+            youglish_enabled=youglish_enabled,
+            youglish_source_field=youglish_source,
+            youglish_target_field=youglish_target,
+            youglish_accent=youglish_accent,
+            youglish_overwrite=youglish_overwrite,
         )
         return config
 
@@ -908,6 +997,29 @@ class ConfigManagerDialog(QDialog):
         )
         self._update_audio_reset_button()
 
+    def _select_youglish_accent(self, accent: str) -> None:
+        normalized = (accent or "us").lower()
+        if self.youglish_accent_combo is None:
+            return
+        index = self.youglish_accent_combo.findData(normalized)
+        if index == -1:
+            normalized = "us"
+            index = self.youglish_accent_combo.findData(normalized)
+        blocked = self.youglish_accent_combo.blockSignals(True)
+        if index != -1:
+            self.youglish_accent_combo.setCurrentIndex(index)
+        self.youglish_accent_combo.blockSignals(blocked)
+
+    def _update_youglish_enabled_state(self) -> None:
+        enabled = self.youglish_enable_checkbox.isChecked()
+        for widget in (
+            self.youglish_source_input,
+            self.youglish_target_input,
+            self.youglish_accent_combo,
+            self.youglish_overwrite_checkbox,
+        ):
+            widget.setEnabled(enabled)
+
     def _on_text_api_key_changed(self, value: str) -> None:
         if self.text_section.provider_combo is None:
             return
@@ -974,6 +1086,51 @@ class ConfigManagerDialog(QDialog):
         self._load_configs()
         self._select_by_name(config.name)
         self._reset_dirty_state()
+        self._update_active_badges()
+
+    def _on_duplicate(self) -> None:
+        if not self._current_name:
+            QMessageBox.information(
+                self,
+                "Select a configuration",
+                "Choose a configuration to duplicate.",
+            )
+            return
+        source = self.store.find(self._current_name)
+        if source is None:
+            QMessageBox.warning(
+                self,
+                "Not found",
+                f"Unable to find configuration '{self._current_name}'.",
+            )
+            return
+        base_name = f"{source.name} copy"
+        new_name = self.store.ensure_unique_name(base_name)
+        clone = LLMConfig.from_dict(source.to_dict())
+        clone.name = new_name
+        self.store.upsert(clone)
+        self._load_configs()
+        self._select_by_name(new_name)
+        self._reset_dirty_state()
+        self._update_active_badges()
+
+    def _on_set_active(self) -> None:
+        if not self._current_name:
+            QMessageBox.information(
+                self,
+                "Select a configuration",
+                "Choose a configuration in the list before setting it as current.",
+            )
+            return
+        settings, _ = get_settings()
+        settings.setValue(SettingsNames.CONFIG_NAME_SETTING_NAME, self._current_name)
+        self._active_config_name = self._current_name
+        self._update_active_badges()
+        QMessageBox.information(
+            self,
+            "Current configuration updated",
+            f"现在使用的配置已切换为：{self._current_name}",
+        )
 
     def _open_config_file(self) -> None:
         target_path = self.store.config_path
@@ -982,9 +1139,28 @@ class ConfigManagerDialog(QDialog):
     def _select_by_name(self, name: str) -> None:
         for row in range(self.config_list.count()):
             item = self.config_list.item(row)
-            if item.text() == name:
+            raw_text = item.text()
+            stripped = raw_text[2:] if raw_text.startswith("✓ ") else raw_text
+            if stripped == name:
                 self.config_list.setCurrentRow(row)
                 break
+        self._update_set_active_enabled()
+
+    def _update_active_badges(self) -> None:
+        active = self._active_config_name or ""
+        for row in range(self.config_list.count()):
+            item = self.config_list.item(row)
+            config: LLMConfig = item.data(Qt.ItemDataRole.UserRole)
+            base_text = config.name
+            if base_text == active:
+                item.setText(f"✓ {base_text}")
+            else:
+                item.setText(base_text)
+        self._update_set_active_enabled()
+
+    def _update_set_active_enabled(self) -> None:
+        is_active_selected = bool(self._current_name and self._current_name == self._active_config_name)
+        self.set_active_button.setEnabled(bool(self._current_name and not is_active_selected))
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         if self._has_unsaved_changes() and not self._confirm_discard_changes("关闭配置管理窗口"):

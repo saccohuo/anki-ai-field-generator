@@ -40,6 +40,11 @@ class SettingsNames:
     ENABLE_TEXT_GENERATION_SETTING_NAME = "enable_text_generation"
     ENABLE_IMAGE_GENERATION_SETTING_NAME = "enable_image_generation"
     ENABLE_AUDIO_GENERATION_SETTING_NAME = "enable_audio_generation"
+    YOUGLISH_ENABLED_SETTING_NAME = "youglish_enabled"
+    YOUGLISH_SOURCE_FIELD_SETTING_NAME = "youglish_source_field"
+    YOUGLISH_TARGET_FIELD_SETTING_NAME = "youglish_target_field"
+    YOUGLISH_ACCENT_SETTING_NAME = "youglish_accent"
+    YOUGLISH_OVERWRITE_SETTING_NAME = "youglish_overwrite"
 
 
 def get_settings() -> QSettings:

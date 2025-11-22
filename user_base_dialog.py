@@ -9,7 +9,10 @@ from anki.notes import Note as AnkiNote
 from aqt.qt import QSettings
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
     QFormLayout,
+    QGroupBox,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -236,6 +239,30 @@ class UserBaseDialog(QWidget):
         self.audio_section.add_form_layout(audio_form)
         container_layout.addWidget(self.audio_section)
 
+        # YouGlish links -------------------------------------------------
+        self.youglish_group = QGroupBox("YouGlish links")
+        youglish_form = QFormLayout(self.youglish_group)
+        youglish_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        self.youglish_enable_checkbox = QCheckBox("Enable YouGlish link generation")
+        self.youglish_enable_checkbox.stateChanged.connect(
+            lambda _: self._update_youglish_enabled_state()
+        )
+        youglish_form.addRow(self.youglish_enable_checkbox)
+        self.youglish_source_input = QLineEdit()
+        self.youglish_source_input.setPlaceholderText("_word")
+        youglish_form.addRow(QLabel("Source field:"), self.youglish_source_input)
+        self.youglish_target_input = QLineEdit()
+        self.youglish_target_input.setPlaceholderText("_youglish")
+        youglish_form.addRow(QLabel("Target field:"), self.youglish_target_input)
+        self.youglish_accent_combo = QComboBox()
+        self.youglish_accent_combo.addItem("US", "us")
+        self.youglish_accent_combo.addItem("UK", "uk")
+        self.youglish_accent_combo.addItem("Australia", "aus")
+        youglish_form.addRow(QLabel("Accent:"), self.youglish_accent_combo)
+        self.youglish_overwrite_checkbox = QCheckBox("Always overwrite existing value")
+        youglish_form.addRow(self.youglish_overwrite_checkbox)
+        container_layout.addWidget(self.youglish_group)
+
         # Ensure mapping editors respond to enable toggles
         self.text_section.enable_checkbox.stateChanged.connect(
             lambda state: self.text_mapping_editor.set_global_enabled(
@@ -286,6 +313,12 @@ class UserBaseDialog(QWidget):
         self.audio_model_input.textChanged.connect(self._on_field_modified)
         self.audio_voice_input.textChanged.connect(self._on_field_modified)
         self.audio_format_input.textChanged.connect(self._on_field_modified)
+        # YouGlish inputs
+        self.youglish_enable_checkbox.stateChanged.connect(self._on_field_modified)
+        self.youglish_source_input.textChanged.connect(self._on_field_modified)
+        self.youglish_target_input.textChanged.connect(self._on_field_modified)
+        self.youglish_accent_combo.currentIndexChanged.connect(self._on_field_modified)
+        self.youglish_overwrite_checkbox.stateChanged.connect(self._on_field_modified)
 
     def _on_field_modified(self, *args: object) -> None:
         if self._loading:
@@ -343,6 +376,11 @@ class UserBaseDialog(QWidget):
             "audio_model": self.audio_model_input.text().strip(),
             "audio_voice": self.audio_voice_input.text().strip(),
             "audio_format": self.audio_format_input.text().strip(),
+            "youglish_enabled": self.youglish_enable_checkbox.isChecked(),
+            "youglish_source": self.youglish_source_input.text().strip(),
+            "youglish_target": self.youglish_target_input.text().strip(),
+            "youglish_accent": self.youglish_accent_combo.currentData(),
+            "youglish_overwrite": self.youglish_overwrite_checkbox.isChecked(),
         }
 
     def _has_unsaved_changes(self) -> bool:
@@ -513,6 +551,39 @@ class UserBaseDialog(QWidget):
         )
         self.audio_section.set_provider(audio_provider)
 
+        youglish_enabled = self._get_bool_setting(
+            SettingsNames.YOUGLISH_ENABLED_SETTING_NAME, True
+        )
+        self.youglish_enable_checkbox.setChecked(youglish_enabled)
+        self.youglish_source_input.setText(
+            self.app_settings.value(
+                SettingsNames.YOUGLISH_SOURCE_FIELD_SETTING_NAME,
+                defaultValue="_word",
+                type=str,
+            )
+            or "_word"
+        )
+        self.youglish_target_input.setText(
+            self.app_settings.value(
+                SettingsNames.YOUGLISH_TARGET_FIELD_SETTING_NAME,
+                defaultValue="_youglish",
+                type=str,
+            )
+            or "_youglish"
+        )
+        self._select_youglish_accent(
+            self.app_settings.value(
+                SettingsNames.YOUGLISH_ACCENT_SETTING_NAME,
+                defaultValue="us",
+                type=str,
+            )
+            or "us"
+        )
+        self.youglish_overwrite_checkbox.setChecked(
+            self._get_bool_setting(SettingsNames.YOUGLISH_OVERWRITE_SETTING_NAME, False)
+        )
+        self._update_youglish_enabled_state()
+
         self._update_text_reset_button()
         self._update_image_reset_button()
         self._update_audio_reset_button()
@@ -579,6 +650,10 @@ class UserBaseDialog(QWidget):
         if audio_enabled and has_audio_mapping and not self.audio_api_key_input.text().strip():
             self._show_error("Enter the speech API key before generating audio.")
             return False
+        if self.youglish_enable_checkbox.isChecked():
+            if not self.youglish_source_input.text().strip() or not self.youglish_target_input.text().strip():
+                self._show_error("Enter both source and target fields for YouGlish links.")
+                return False
 
         retry_limit, retry_delay = self.retry_section.values()
         if retry_limit <= 0:
@@ -685,6 +760,26 @@ class UserBaseDialog(QWidget):
         self.app_settings.setValue(
             SettingsNames.ENABLE_AUDIO_GENERATION_SETTING_NAME,
             self.audio_section.is_enabled(),
+        )
+        self.app_settings.setValue(
+            SettingsNames.YOUGLISH_ENABLED_SETTING_NAME,
+            self.youglish_enable_checkbox.isChecked(),
+        )
+        self.app_settings.setValue(
+            SettingsNames.YOUGLISH_SOURCE_FIELD_SETTING_NAME,
+            self.youglish_source_input.text().strip() or "_word",
+        )
+        self.app_settings.setValue(
+            SettingsNames.YOUGLISH_TARGET_FIELD_SETTING_NAME,
+            self.youglish_target_input.text().strip() or "_youglish",
+        )
+        self.app_settings.setValue(
+            SettingsNames.YOUGLISH_ACCENT_SETTING_NAME,
+            str(self.youglish_accent_combo.currentData() or "us"),
+        )
+        self.app_settings.setValue(
+            SettingsNames.YOUGLISH_OVERWRITE_SETTING_NAME,
+            self.youglish_overwrite_checkbox.isChecked(),
         )
 
     def _load_text_rows(self) -> list[tuple[str, str, bool]]:
@@ -796,6 +891,27 @@ class UserBaseDialog(QWidget):
             if provider is not None:
                 enabled = str(provider).lower() in AUDIO_PROVIDER_DEFAULTS
         self.audio_defaults_button.setEnabled(enabled)
+
+    def _select_youglish_accent(self, accent: str) -> None:
+        normalized = (accent or "us").lower()
+        index = self.youglish_accent_combo.findData(normalized)
+        if index == -1:
+            normalized = "us"
+            index = self.youglish_accent_combo.findData(normalized)
+        blocked = self.youglish_accent_combo.blockSignals(True)
+        if index != -1:
+            self.youglish_accent_combo.setCurrentIndex(index)
+        self.youglish_accent_combo.blockSignals(blocked)
+
+    def _update_youglish_enabled_state(self) -> None:
+        enabled = self.youglish_enable_checkbox.isChecked()
+        for widget in (
+            self.youglish_source_input,
+            self.youglish_target_input,
+            self.youglish_accent_combo,
+            self.youglish_overwrite_checkbox,
+        ):
+            widget.setEnabled(enabled)
 
     def _decode_mapping_rows(
         self, entries: Iterable[str]

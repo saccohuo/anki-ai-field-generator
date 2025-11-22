@@ -117,7 +117,7 @@ class ClientFactory:
         return panel
 
     def open_config_manager(self, parent) -> bool:
-        dialog = ConfigManagerDialog(parent)
+        dialog = ConfigManagerDialog(parent, selected_config=self.active_config.name if self.active_config else None)
         dialog.exec()
         # Reload store to pick up changes
         self.store = ConfigStore(self.store.config_path)
@@ -263,6 +263,26 @@ class ClientFactory:
             SettingsNames.ENABLE_AUDIO_GENERATION_SETTING_NAME,
             config.enable_audio_generation,
         )
+        self.app_settings.setValue(
+            SettingsNames.YOUGLISH_ENABLED_SETTING_NAME,
+            config.youglish_enabled,
+        )
+        self.app_settings.setValue(
+            SettingsNames.YOUGLISH_SOURCE_FIELD_SETTING_NAME,
+            config.youglish_source_field,
+        )
+        self.app_settings.setValue(
+            SettingsNames.YOUGLISH_TARGET_FIELD_SETTING_NAME,
+            config.youglish_target_field,
+        )
+        self.app_settings.setValue(
+            SettingsNames.YOUGLISH_ACCENT_SETTING_NAME,
+            config.youglish_accent,
+        )
+        self.app_settings.setValue(
+            SettingsNames.YOUGLISH_OVERWRITE_SETTING_NAME,
+            config.youglish_overwrite,
+        )
         self.app_settings.setValue(SettingsNames.RETRY_LIMIT_SETTING_NAME, config.retry_limit)
         self.app_settings.setValue(SettingsNames.RETRY_DELAY_SETTING_NAME, config.retry_delay)
         self.app_settings.setValue(SettingsNames.IMAGE_MAPPING_SETTING_NAME, config.image_prompt_mappings)
@@ -325,6 +345,50 @@ class ClientFactory:
     @staticmethod
     def focus_progress_dialog() -> bool:
         return _focus_active_progress_dialog()
+
+    # YouGlish only flow ----------------------------------------------
+
+    def run_youglish_only(self, browser) -> None:
+        if not self.notes:
+            QMessageBox.information(
+                browser,
+                "Anki AI",
+                "Select at least one note before updating YouGlish links.",
+            )
+            return
+        if not self._get_bool_setting(SettingsNames.YOUGLISH_ENABLED_SETTING_NAME, True):
+            QMessageBox.information(
+                browser,
+                "Anki AI",
+                "YouGlish link generation is disabled in the current configuration.",
+            )
+            return
+        note_processor = NoteProcessor(
+            self.notes,
+            self.get_client(),
+            self.app_settings,
+            speech_client=None,
+            generate_text=False,
+            generate_images=False,
+            generate_audio=False,
+            generate_youglish=True,
+        )
+
+        def on_success() -> None:
+            browser.mw.reset()
+            self.progress_dialog = None
+
+        dialog = ProgressDialog(note_processor, success_callback=on_success)
+        dialog.show()
+        self.progress_dialog = dialog
+        _set_active_progress_dialog(dialog)
+
+        def clear_dialog_reference() -> None:
+            if getattr(self, "progress_dialog", None) is dialog:
+                setattr(self, "progress_dialog", None)
+            _clear_active_progress_dialog(dialog)
+
+        dialog.destroyed.connect(clear_dialog_reference)
 
 
 __all__ = ["ClientFactory"]

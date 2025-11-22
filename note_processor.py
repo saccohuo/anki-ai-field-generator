@@ -10,6 +10,7 @@ import threading
 import traceback
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote_plus
 
 from anki.notes import Note as AnkiNote
 from aqt.qt import QSettings
@@ -71,6 +72,7 @@ class NoteProcessor(QThread):
         generate_text: bool = True,
         generate_images: bool = True,
         generate_audio: bool = True,
+        generate_youglish: bool = True,
         missing_field_is_error: bool = False,
     ) -> None:
         super().__init__()
@@ -151,6 +153,45 @@ class NoteProcessor(QThread):
             SettingsNames.AUDIO_FORMAT_SETTING_NAME, defaultValue="wav", type=str
         )
         self._audio_format = (raw_audio_format or "wav").strip().lower() or "wav"
+        self._youglish_enabled = self._get_bool_setting(
+            self.settings,
+            SettingsNames.YOUGLISH_ENABLED_SETTING_NAME,
+            default=True,
+        )
+        self._youglish_source_field = (
+            self.settings.value(
+                SettingsNames.YOUGLISH_SOURCE_FIELD_SETTING_NAME,
+                defaultValue="_word",
+                type=str,
+            )
+            or "_word"
+        ).strip()
+        self._youglish_target_field = (
+            self.settings.value(
+                SettingsNames.YOUGLISH_TARGET_FIELD_SETTING_NAME,
+                defaultValue="_youglish",
+                type=str,
+            )
+            or "_youglish"
+        ).strip()
+        accent_raw = (
+            self.settings.value(
+                SettingsNames.YOUGLISH_ACCENT_SETTING_NAME,
+                defaultValue="us",
+                type=str,
+            )
+            or "us"
+        ).strip()
+        accent_normalized = accent_raw.lower()
+        self._youglish_accent = (
+            accent_normalized if accent_normalized in {"us", "uk", "aus"} else "us"
+        )
+        self._youglish_overwrite = self._get_bool_setting(
+            self.settings,
+            SettingsNames.YOUGLISH_OVERWRITE_SETTING_NAME,
+            default=False,
+        )
+        self._generate_youglish = generate_youglish
         mappings = settings.value(
             SettingsNames.IMAGE_MAPPING_SETTING_NAME, type="QStringList"
         ) or []
@@ -205,10 +246,16 @@ class NoteProcessor(QThread):
                 wait_seconds=max(retry_delay, 1.0),
             ),
         }
-        self._enable_text_generation = bool(self.response_keys)
-        self._enable_image_generation = bool(self.image_field_mappings)
-        self._enable_audio_generation = (
-            bool(self.audio_field_mappings) and speech_client is not None
+        self._enable_text_generation = bool(generate_text and self.response_keys)
+        self._enable_image_generation = bool(generate_images and self.image_field_mappings)
+        self._enable_audio_generation = bool(
+            generate_audio and self.audio_field_mappings and speech_client is not None
+        )
+        self._enable_youglish = bool(
+            generate_youglish
+            and self._youglish_enabled
+            and self._youglish_source_field
+            and self._youglish_target_field
         )
         if not self._enable_audio_generation:
             self._speech_client = None
@@ -433,6 +480,26 @@ class NoteProcessor(QThread):
                 for mapping in self.audio_field_mappings:
                     note_state["audio"][mapping] = True
 
+            if self._enable_youglish:
+                try:
+                    note, youglish_fields = self._apply_youglish_links(
+                        note,
+                        note_state,
+                        base_progress=base_progress,
+                        per_card=per_card,
+                    )
+                    self.notes[self.current_index] = note
+                    if youglish_fields:
+                        self._commit_note_sections(
+                            note,
+                            [("youglish", youglish_fields)],
+                        )
+                except ExternalException as exc:
+                    self._emit_stage_error("YouGlish 链接生成", exc)
+                    return
+            else:
+                note_state["youglish"] = True
+
             self.progress_updated.emit(
                 min(100, int(base_progress + per_card)),
                 f"Completed {i + 1}/{self.total_items}",
@@ -607,6 +674,66 @@ class NoteProcessor(QThread):
 
         return note, overwritten_fields
 
+    def _apply_youglish_links(
+        self,
+        note: AnkiNote,
+        state: dict[str, Any],
+        *,
+        base_progress: float,
+        per_card: float,
+    ) -> tuple[AnkiNote, list[str]]:
+        if state.get("youglish", False):
+            return note, []
+        state["youglish"] = True
+        if not self._youglish_source_field or not self._youglish_target_field:
+            return note, []
+        if (
+            self._youglish_source_field not in note
+            or self._youglish_target_field not in note
+        ):
+            return note, []
+        source_raw = str(note[self._youglish_source_field])
+        term = self._prepare_youglish_term(source_raw)
+        if not term:
+            return note, []
+        current_value = str(note[self._youglish_target_field] or "")
+        if current_value.strip() and not self._youglish_overwrite:
+            return note, []
+        link = self._build_youglish_url(term)
+        if not link:
+            return note, []
+        note, conflicts = self._check_for_conflicts(
+            note,
+            "youglish",
+            [self._youglish_target_field],
+            {self._youglish_target_field: link},
+        )
+        if conflicts:
+            decision = self._wait_for_conflict_resolution(
+                note.id,
+                "youglish",
+                conflicts,
+            )
+            if decision == "skip":
+                self._update_snapshot_section(
+                    note,
+                    "youglish",
+                    [self._youglish_target_field],
+                )
+                return note, []
+            if decision == "abort":
+                raise ExternalException(
+                    "YouGlish 链接写入已取消。",
+                    code=ErrorCode.GENERIC,
+                )
+        progress_hint = int(min(99, base_progress + (per_card * 0.9)))
+        self.progress_updated.emit(
+            progress_hint,
+            "Writing YouGlish link...",
+        )
+        note[self._youglish_target_field] = link
+        return note, [self._youglish_target_field]
+
     def _write_audio_to_media(
         self,
         note: AnkiNote,
@@ -696,6 +823,34 @@ class NoteProcessor(QThread):
         text = re.sub(r"\s+", " ", text)
         return text.strip()
 
+    def _prepare_youglish_term(self, value: str) -> str:
+        if not value:
+            return ""
+        text = html.unescape(str(value))
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = re.sub(r"\s+", " ", text)
+        return text.strip()
+
+    def _build_youglish_url(self, term: str) -> str:
+        normalized = (term or "").strip()
+        if not normalized:
+            return ""
+        accent = self._youglish_accent if self._youglish_accent in {"us", "uk", "aus"} else "us"
+        encoded = quote_plus(normalized)
+        return f"https://youglish.com/pronounce/{encoded}/english?accent={accent}"
+
+    @staticmethod
+    def _get_bool_setting(settings: QSettings, name: str, *, default: bool = False) -> bool:
+        value = settings.value(name, defaultValue=default)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        try:
+            return bool(int(value))
+        except Exception:
+            return bool(value)
+
     def _initialize_note_progress(self) -> None:
         for note in self.notes:
             self._note_progress[note.id] = self._create_note_state()
@@ -714,6 +869,11 @@ class NoteProcessor(QThread):
             "text": (not self._enable_text_generation) or not text_fields_present,
             "image": image_state,
             "audio": audio_state,
+            "youglish": (
+                not self._enable_youglish
+                or not self._youglish_source_field
+                or not self._youglish_target_field
+            ),
         }
 
     def _build_initial_snapshots(self) -> dict[int, dict[str, dict[str, str]]]:
@@ -732,6 +892,15 @@ class NoteProcessor(QThread):
                     target: note[target] if target in note else ""
                     for _, target in self.audio_field_mappings
                 },
+                "youglish": {
+                    self._youglish_target_field: (
+                        note[self._youglish_target_field]
+                        if self._youglish_target_field in note
+                        else ""
+                    )
+                }
+                if self._youglish_target_field
+                else {},
             }
             snapshots[note.id] = note_snap
         return snapshots
