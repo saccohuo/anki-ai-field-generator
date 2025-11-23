@@ -1,6 +1,7 @@
 import html
 import re
 import webbrowser
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote_plus
@@ -256,6 +257,52 @@ def _open_youglish_for_selection(browser) -> None:
             except Exception:
                 pass
         webbrowser.open(url)
+
+
+@dataclass
+class _AiMenuActions:
+    update: QAction
+    manage: QAction
+    progress: QAction
+    youglish_open: QAction
+    youglish_update: QAction
+    oaad_open: QAction
+    oaad_update: QAction
+
+    def refresh_labels(self) -> None:
+        self.youglish_update.setText(_youglish_action_label())
+        self.oaad_update.setText(_oaad_action_label())
+
+
+def _create_ai_menu_actions(browser) -> _AiMenuActions:
+    update_action = QAction("Update Your Flashcards with AI", browser)
+    update_action.triggered.connect(lambda: _launch_client_ui(browser))
+
+    manage_action = QAction("Manage AI Configurations", browser)
+    manage_action.triggered.connect(lambda: show_config_dialog(browser))
+
+    progress_action = QAction("显示运行中的任务", browser)
+    progress_action.triggered.connect(lambda: _show_progress_dialog(browser))
+
+    yg_open = QAction("Open YouGlish Link", browser)
+    yg_open.triggered.connect(lambda: _open_youglish_for_selection(browser))
+    yg_update = QAction(_youglish_action_label(), browser)
+    yg_update.triggered.connect(lambda: _run_youglish_update(browser))
+
+    oaad_open = QAction("Open OAAD Link", browser)
+    oaad_open.triggered.connect(lambda: _open_oaad_for_selection(browser))
+    oaad_update = QAction(_oaad_action_label(), browser)
+    oaad_update.triggered.connect(lambda: _run_oaad_update(browser))
+
+    return _AiMenuActions(
+        update=update_action,
+        manage=manage_action,
+        progress=progress_action,
+        youglish_open=yg_open,
+        youglish_update=yg_update,
+        oaad_open=oaad_open,
+        oaad_update=oaad_update,
+    )
 
 
 def _open_oaad_for_selection(browser) -> None:
@@ -643,37 +690,17 @@ class _NewNoteBrowserProxy:
 
 
 def on_setup_menus(browser):
+    actions = _create_ai_menu_actions(browser)
     menu = QMenu("Anki AI", browser.form.menubar)
     browser.form.menubar.addMenu(menu)
-    cps_action = QAction("Update Your Flashcards with AI", mw)
-    cps_action.triggered.connect(lambda: _launch_client_ui(browser))
-    menu.addAction(cps_action)
-
-    settings_action = QAction("Manage AI Configurations", mw)
-    settings_action.triggered.connect(lambda: show_config_dialog(browser))
-    menu.addAction(settings_action)
-
-    progress_action = QAction("显示运行中的任务", mw)
-    progress_action.triggered.connect(lambda: _show_progress_dialog(browser))
-    menu.addAction(progress_action)
-    youglish_action = QAction("Open YouGlish Link", mw)
-    youglish_action.triggered.connect(lambda: _open_youglish_for_selection(browser))
-    menu.addAction(youglish_action)
-    youglish_update_action = QAction(_youglish_action_label(), mw)
-    youglish_update_action.triggered.connect(lambda: _run_youglish_update(browser))
-    menu.addAction(youglish_update_action)
-    oaad_action = QAction("Open OAAD Link", mw)
-    oaad_action.triggered.connect(lambda: _open_oaad_for_selection(browser))
-    menu.addAction(oaad_action)
-    oaad_update_action = QAction(_oaad_action_label(), mw)
-    oaad_update_action.triggered.connect(lambda: _run_oaad_update(browser))
-    menu.addAction(oaad_update_action)
-    menu.aboutToShow.connect(
-        lambda: (
-            youglish_update_action.setText(_youglish_action_label()),
-            oaad_update_action.setText(_oaad_action_label()),
-        )
-    )
+    menu.addAction(actions.update)
+    menu.addAction(actions.manage)
+    menu.addAction(actions.progress)
+    menu.addAction(actions.youglish_open)
+    menu.addAction(actions.youglish_update)
+    menu.addAction(actions.oaad_open)
+    menu.addAction(actions.oaad_update)
+    menu.aboutToShow.connect(actions.refresh_labels)
 
 
 hooks.addHook("browser.setupMenus", on_setup_menus)
@@ -681,21 +708,15 @@ hooks.addHook("browser.setupMenus", on_setup_menus)
 
 
 def on_will_show_context_menu(browser, menu):
-    action = QAction("Update Your Flashcards with AI", browser)
-    action.triggered.connect(lambda _: _launch_client_ui(browser))
-    menu.addAction(action)
-    yg_action = QAction("Open YouGlish Link", browser)
-    yg_action.triggered.connect(lambda _: _open_youglish_for_selection(browser))
-    menu.addAction(yg_action)
-    yg_update = QAction(_youglish_action_label(), browser)
-    yg_update.triggered.connect(lambda _: _run_youglish_update(browser))
-    menu.addAction(yg_update)
-    oaad_action = QAction("Open OAAD Link", browser)
-    oaad_action.triggered.connect(lambda _: _open_oaad_for_selection(browser))
-    menu.addAction(oaad_action)
-    oaad_update = QAction(_oaad_action_label(), browser)
-    oaad_update.triggered.connect(lambda _: _run_oaad_update(browser))
-    menu.addAction(oaad_update)
+    actions = _create_ai_menu_actions(browser)
+    actions.refresh_labels()
+    menu.addAction(actions.update)
+    menu.addAction(actions.manage)
+    menu.addAction(actions.youglish_open)
+    menu.addAction(actions.youglish_update)
+    menu.addAction(actions.oaad_open)
+    menu.addAction(actions.oaad_update)
+    menu.aboutToShow.connect(actions.refresh_labels)
 
 
 gui_hooks.browser_will_show_context_menu.append(on_will_show_context_menu)

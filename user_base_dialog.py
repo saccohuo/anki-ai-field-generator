@@ -28,6 +28,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QFont
 
 from .mapping_sections import GenerationSection, RetrySection, ToggleMappingEditor
+from .provider_defaults import apply_provider_defaults, reset_button_enabled
 from .provider_options import (
     AUDIO_PROVIDERS,
     AUDIO_PROVIDER_DEFAULTS,
@@ -522,12 +523,12 @@ class UserBaseDialog(QWidget):
             return
         self._provider_indices[kind] = index
         provider = str(combo.currentData() or "")
-        # Load stored key for this provider if present, otherwise defaults.
+        # Always apply provider defaults when switching to keep runtime/config manager aligned.
+        defaults_fn(force=True)
+        # Load stored key for this provider if present after defaults.
         stored_key = key_map.get(provider, "")
         if stored_key:
             target_input.setText(stored_key)
-        else:
-            defaults_fn(force=False)
         update_button()
         self._mark_dirty()
 
@@ -1075,16 +1076,13 @@ class UserBaseDialog(QWidget):
         provider = combo.currentData()
         if provider is None:
             return
-        provider_key = str(provider).lower()
-        defaults = TEXT_PROVIDER_DEFAULTS.get(provider_key)
-        if not defaults:
-            return
-        endpoint_default = defaults.get("endpoint", "")
-        model_default = defaults.get("model", "")
-        if endpoint_default and (force or not self.endpoint_input.text().strip()):
-            self.endpoint_input.setText(endpoint_default)
-        if model_default and (force or not self.model_input.text().strip()):
-            self.model_input.setText(model_default)
+        apply_provider_defaults(
+            str(provider),
+            TEXT_PROVIDER_DEFAULTS,
+            endpoint_input=self.endpoint_input,
+            model_input=self.model_input,
+            force=force,
+        )
         self._update_text_reset_button()
 
     def _apply_image_provider_defaults(self, *, force: bool = False) -> None:
@@ -1094,16 +1092,13 @@ class UserBaseDialog(QWidget):
         provider = combo.currentData()
         if provider is None:
             return
-        provider_key = str(provider).lower()
-        defaults = IMAGE_PROVIDER_DEFAULTS.get(provider_key)
-        if not defaults:
-            return
-        endpoint_default = defaults.get("endpoint", "")
-        model_default = defaults.get("model", "")
-        if endpoint_default and (force or not self.image_endpoint_input.text().strip()):
-            self.image_endpoint_input.setText(endpoint_default)
-        if model_default and (force or not self.image_model_input.text().strip()):
-            self.image_model_input.setText(model_default)
+        apply_provider_defaults(
+            str(provider),
+            IMAGE_PROVIDER_DEFAULTS,
+            endpoint_input=self.image_endpoint_input,
+            model_input=self.image_model_input,
+            force=force,
+        )
         self._update_image_reset_button()
 
     def _apply_audio_provider_defaults(self, *, force: bool = False) -> None:
@@ -1113,41 +1108,31 @@ class UserBaseDialog(QWidget):
         provider = combo.currentData()
         if provider is None:
             return
-        provider_key = str(provider).lower()
-        defaults = AUDIO_PROVIDER_DEFAULTS.get(provider_key)
-        if not defaults:
-            return
-        endpoint_default = defaults.get("endpoint", "")
-        model_default = defaults.get("model", "")
-        if endpoint_default and (force or not self.audio_endpoint_input.text().strip()):
-            self.audio_endpoint_input.setText(endpoint_default)
-        if model_default and (force or not self.audio_model_input.text().strip()):
-            self.audio_model_input.setText(model_default)
+        apply_provider_defaults(
+            str(provider),
+            AUDIO_PROVIDER_DEFAULTS,
+            endpoint_input=self.audio_endpoint_input,
+            model_input=self.audio_model_input,
+            voice_input=self.audio_voice_input,
+            format_input=self.audio_format_input,
+            force=force,
+        )
         self._update_audio_reset_button()
 
     def _update_text_reset_button(self) -> None:
-        enabled = False
-        if self.text_section.provider_combo is not None:
-            provider = self.text_section.provider_combo.currentData()
-            if provider is not None:
-                enabled = str(provider).lower() in TEXT_PROVIDER_DEFAULTS
-        self.text_defaults_button.setEnabled(enabled)
+        self.text_defaults_button.setEnabled(
+            reset_button_enabled(self.text_section.provider_combo, TEXT_PROVIDER_DEFAULTS)
+        )
 
     def _update_image_reset_button(self) -> None:
-        enabled = False
-        if self.image_section.provider_combo is not None:
-            provider = self.image_section.provider_combo.currentData()
-            if provider is not None:
-                enabled = str(provider).lower() in IMAGE_PROVIDER_DEFAULTS
-        self.image_defaults_button.setEnabled(enabled)
+        self.image_defaults_button.setEnabled(
+            reset_button_enabled(self.image_section.provider_combo, IMAGE_PROVIDER_DEFAULTS)
+        )
 
     def _update_audio_reset_button(self) -> None:
-        enabled = False
-        if self.audio_section.provider_combo is not None:
-            provider = self.audio_section.provider_combo.currentData()
-            if provider is not None:
-                enabled = str(provider).lower() in AUDIO_PROVIDER_DEFAULTS
-        self.audio_defaults_button.setEnabled(enabled)
+        self.audio_defaults_button.setEnabled(
+            reset_button_enabled(self.audio_section.provider_combo, AUDIO_PROVIDER_DEFAULTS)
+        )
 
     def _select_youglish_accent(self, accent: str) -> None:
         normalized = (accent or "us").lower()

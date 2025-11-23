@@ -33,6 +33,7 @@ except Exception:  # pragma: no cover - tests without Anki
 
 from .config_store import ConfigStore, LLMConfig
 from .mapping_sections import GenerationSection, RetrySection, ToggleMappingEditor
+from .provider_defaults import apply_provider_defaults, reset_button_enabled
 from .provider_options import (
     AUDIO_PROVIDERS,
     AUDIO_PROVIDER_DEFAULTS,
@@ -959,24 +960,18 @@ class ConfigManagerDialog(QDialog):
         provider = combo.currentData()
         if provider is None:
             return
-        provider_key = str(provider).lower()
-        defaults = TEXT_PROVIDER_DEFAULTS.get(provider_key)
-        if not defaults:
-            return
-        endpoint_default = defaults.get("endpoint", "")
-        model_default = defaults.get("model", "")
-        if endpoint_default and (force or not self.endpoint_input.text().strip()):
-            self.endpoint_input.setText(endpoint_default)
-        if model_default and (force or not self.model_input.text().strip()):
-            self.model_input.setText(model_default)
+        apply_provider_defaults(
+            str(provider),
+            TEXT_PROVIDER_DEFAULTS,
+            endpoint_input=self.endpoint_input,
+            model_input=self.model_input,
+            force=force,
+        )
 
     def _update_text_reset_button(self) -> None:
-        enabled = False
-        if self.text_section.provider_combo is not None:
-            provider = self.text_section.provider_combo.currentData()
-            if provider is not None:
-                enabled = str(provider).lower() in TEXT_PROVIDER_DEFAULTS
-        self.text_defaults_button.setEnabled(enabled)
+        self.text_defaults_button.setEnabled(
+            reset_button_enabled(self.text_section.provider_combo, TEXT_PROVIDER_DEFAULTS)
+        )
 
     def _apply_image_provider_defaults(self, *, force: bool = False) -> None:
         combo = self.image_section.provider_combo
@@ -985,24 +980,18 @@ class ConfigManagerDialog(QDialog):
         provider = combo.currentData()
         if provider is None:
             return
-        provider_key = str(provider).lower()
-        defaults = IMAGE_PROVIDER_DEFAULTS.get(provider_key)
-        if not defaults:
-            return
-        endpoint_default = defaults.get("endpoint", "")
-        model_default = defaults.get("model", "")
-        if endpoint_default and (force or not self.image_endpoint_input.text().strip()):
-            self.image_endpoint_input.setText(endpoint_default)
-        if model_default and (force or not self.image_model_input.text().strip()):
-            self.image_model_input.setText(model_default)
+        apply_provider_defaults(
+            str(provider),
+            IMAGE_PROVIDER_DEFAULTS,
+            endpoint_input=self.image_endpoint_input,
+            model_input=self.image_model_input,
+            force=force,
+        )
 
     def _update_image_reset_button(self) -> None:
-        enabled = False
-        if self.image_section.provider_combo is not None:
-            provider = self.image_section.provider_combo.currentData()
-            if provider is not None:
-                enabled = str(provider).lower() in IMAGE_PROVIDER_DEFAULTS
-        self.image_defaults_button.setEnabled(enabled)
+        self.image_defaults_button.setEnabled(
+            reset_button_enabled(self.image_section.provider_combo, IMAGE_PROVIDER_DEFAULTS)
+        )
 
     def _apply_audio_provider_defaults(self, *, force: bool = False) -> None:
         combo = self.audio_section.provider_combo
@@ -1011,16 +1000,15 @@ class ConfigManagerDialog(QDialog):
         provider = combo.currentData()
         if provider is None:
             return
-        provider_key = str(provider).lower()
-        defaults = AUDIO_PROVIDER_DEFAULTS.get(provider_key)
-        if not defaults:
-            return
-        endpoint_default = defaults.get("endpoint", "")
-        model_default = defaults.get("model", "")
-        if endpoint_default and (force or not self.audio_endpoint_input.text().strip()):
-            self.audio_endpoint_input.setText(endpoint_default)
-        if model_default and (force or not self.audio_model_input.text().strip()):
-            self.audio_model_input.setText(model_default)
+        apply_provider_defaults(
+            str(provider),
+            AUDIO_PROVIDER_DEFAULTS,
+            endpoint_input=self.audio_endpoint_input,
+            model_input=self.audio_model_input,
+            voice_input=self.audio_voice_input,
+            format_input=self.audio_format_input,
+            force=force,
+        )
 
     def _load_text_api_key_for_current_provider(self) -> None:
         provider = ""
@@ -1131,13 +1119,6 @@ class ConfigManagerDialog(QDialog):
         provider_key = provider.lower()
         if provider_key in AUDIO_PROVIDER_DEFAULTS:
             self._apply_audio_provider_defaults(force=True)
-            defaults = AUDIO_PROVIDER_DEFAULTS[provider_key]
-            voice_default = defaults.get("voice")
-            if voice_default is not None:
-                self.audio_voice_input.setText(voice_default)
-            format_default = defaults.get("format")
-            if format_default is not None:
-                self.audio_format_input.setText(format_default)
         self._load_audio_api_key_for_current_provider()
         self._update_audio_reset_button()
         self._mark_dirty()

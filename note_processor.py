@@ -410,12 +410,39 @@ class NoteProcessor(QThread):
                 if skip_note or response is None:
                     continue
 
-                text_new_values = {
-                    note_field: response[response_key]
-                    for note_field, response_key in zip(
-                        self.note_fields, self.response_keys
+                missing_keys: list[str] = []
+                text_new_values: dict[str, Any] = {}
+                for note_field, response_key in zip(self.note_fields, self.response_keys):
+                    if response_key not in response:
+                        missing_keys.append(response_key)
+                        continue
+                    text_new_values[note_field] = response[response_key]
+
+                if missing_keys:
+                    available = list(response.keys()) if isinstance(response, dict) else []
+                    self._log_event(
+                        "Model response missing expected keys.",
+                        {
+                            "note_id": getattr(note, "id", "unknown"),
+                            "missing_keys": missing_keys,
+                            "available_keys": available,
+                        },
                     )
-                }
+                    self._record_note_error(
+                        note,
+                        "文本生成",
+                        ExternalException(
+                            f"模型响应缺少字段：{', '.join(missing_keys)}",
+                            code=ErrorCode.BAD_REQUEST,
+                            details={
+                                "missing_keys": missing_keys,
+                                "available_keys": available,
+                            },
+                        ),
+                    )
+                    self.current_index += 1
+                    continue
+
                 text_fields = list(text_new_values.keys())
                 note, conflicts = self._check_for_conflicts(
                     note,
