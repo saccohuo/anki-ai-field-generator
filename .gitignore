@@ -6,6 +6,7 @@ AGENTS.md
 LOG.md
 config.yaml
 tests/
+tmp/
 
 # macOS Finder metadata
 .DS_Store

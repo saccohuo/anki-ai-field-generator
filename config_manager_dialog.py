@@ -430,6 +430,29 @@ class ConfigManagerDialog(QDialog):
         youglish_form.addRow(self.youglish_overwrite_checkbox)
         editor_layout.addWidget(self.youglish_group)
 
+        # OAAD links
+        self.oaad_group, oaad_form = self._create_titled_group("OAAD links")
+        oaad_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        self.oaad_enable_checkbox = QCheckBox("Enable OAAD link generation")
+        self.oaad_enable_checkbox.setChecked(True)
+        self.oaad_enable_checkbox.stateChanged.connect(
+            lambda _: self._update_oaad_enabled_state()
+        )
+        oaad_form.addRow(self.oaad_enable_checkbox)
+        self.oaad_source_input = QLineEdit()
+        self.oaad_source_input.setPlaceholderText("_word")
+        oaad_form.addRow(QLabel("Source field:"), self.oaad_source_input)
+        self.oaad_target_input = QLineEdit()
+        self.oaad_target_input.setPlaceholderText("_oaad")
+        oaad_form.addRow(QLabel("Target field:"), self.oaad_target_input)
+        self.oaad_accent_combo = QComboBox()
+        self.oaad_accent_combo.addItem("US", "us")
+        self.oaad_accent_combo.addItem("UK", "uk")
+        oaad_form.addRow(QLabel("Accent:"), self.oaad_accent_combo)
+        self.oaad_overwrite_checkbox = QCheckBox("Always overwrite existing value")
+        oaad_form.addRow(self.oaad_overwrite_checkbox)
+        editor_layout.addWidget(self.oaad_group)
+
         self.text_section.enable_checkbox.stateChanged.connect(
             lambda state: self.text_mapping_editor.set_global_enabled(
                 Qt.CheckState(state) == Qt.CheckState.Checked
@@ -518,6 +541,11 @@ class ConfigManagerDialog(QDialog):
         self.youglish_target_input.textChanged.connect(self._on_form_modified)
         self.youglish_accent_combo.currentIndexChanged.connect(self._on_form_modified)
         self.youglish_overwrite_checkbox.stateChanged.connect(self._on_form_modified)
+        self.oaad_enable_checkbox.stateChanged.connect(self._on_form_modified)
+        self.oaad_source_input.textChanged.connect(self._on_form_modified)
+        self.oaad_target_input.textChanged.connect(self._on_form_modified)
+        self.oaad_accent_combo.currentIndexChanged.connect(self._on_form_modified)
+        self.oaad_overwrite_checkbox.stateChanged.connect(self._on_form_modified)
 
     # Data helpers -----------------------------------------------------
 
@@ -625,6 +653,11 @@ class ConfigManagerDialog(QDialog):
             "schedule_notice_seconds": self.schedule_notice_seconds_input.value(),
             "auto_queue_display_field": self.auto_queue_display_field_input.text().strip(),
             "auto_queue_silent": self.auto_queue_silent_checkbox.isChecked(),
+            "oaad_enabled": self.oaad_enable_checkbox.isChecked(),
+            "oaad_source": self.oaad_source_input.text().strip(),
+            "oaad_target": self.oaad_target_input.text().strip(),
+            "oaad_accent": self.oaad_accent_combo.currentData(),
+            "oaad_overwrite": self.oaad_overwrite_checkbox.isChecked(),
             "youglish_enabled": self.youglish_enable_checkbox.isChecked(),
             "youglish_source": self.youglish_source_input.text().strip(),
             "youglish_target": self.youglish_target_input.text().strip(),
@@ -755,12 +788,18 @@ class ConfigManagerDialog(QDialog):
         self.schedule_notice_seconds_input.setValue(config.schedule_notice_seconds or 30)
         self.auto_queue_display_field_input.setText(config.auto_queue_display_field or "")
         self.auto_queue_silent_checkbox.setChecked(bool(config.auto_queue_silent))
+        self.oaad_enable_checkbox.setChecked(bool(config.oaad_enabled))
+        self.oaad_source_input.setText(config.oaad_source_field or "_word")
+        self.oaad_target_input.setText(config.oaad_target_field or "_oaad")
+        self._select_oaad_accent(config.oaad_accent or "us")
+        self.oaad_overwrite_checkbox.setChecked(bool(config.oaad_overwrite))
         self.youglish_enable_checkbox.setChecked(bool(config.youglish_enabled))
         self.youglish_source_input.setText(config.youglish_source_field or "_word")
         self.youglish_target_input.setText(config.youglish_target_field or "_youglish")
         self._select_youglish_accent(config.youglish_accent or "us")
         self.youglish_overwrite_checkbox.setChecked(bool(config.youglish_overwrite))
         self._update_youglish_enabled_state()
+        self._update_oaad_enabled_state()
 
     def _decode_text_entries(
         self, entries: Sequence[dict[str, object]] | None
@@ -790,6 +829,19 @@ class ConfigManagerDialog(QDialog):
             if enabled and key and field:
                 response_keys.append(key)
                 destination_fields.append(field)
+
+        oaad_enabled = self.oaad_enable_checkbox.isChecked()
+        oaad_source = self.oaad_source_input.text().strip() or "_word"
+        oaad_target = self.oaad_target_input.text().strip() or "_oaad"
+        oaad_accent = str(self.oaad_accent_combo.currentData() or "us")
+        oaad_overwrite = self.oaad_overwrite_checkbox.isChecked()
+        if oaad_enabled and (not oaad_source or not oaad_target):
+            QMessageBox.warning(
+                self,
+                "Missing OAAD fields",
+                "Enable OAAD requires both source and target fields.",
+            )
+            return None
 
         youglish_enabled = self.youglish_enable_checkbox.isChecked()
         youglish_source = self.youglish_source_input.text().strip() or "_word"
@@ -864,6 +916,11 @@ class ConfigManagerDialog(QDialog):
             schedule_notice_seconds=self.schedule_notice_seconds_input.value(),
             auto_queue_display_field=self.auto_queue_display_field_input.text().strip(),
             auto_queue_silent=self.auto_queue_silent_checkbox.isChecked(),
+            oaad_enabled=self.oaad_enable_checkbox.isChecked(),
+            oaad_source_field=oaad_source,
+            oaad_target_field=oaad_target,
+            oaad_accent=str(self.oaad_accent_combo.currentData() or "us"),
+            oaad_overwrite=self.oaad_overwrite_checkbox.isChecked(),
             youglish_enabled=youglish_enabled,
             youglish_source_field=youglish_source,
             youglish_target_field=youglish_target,
@@ -1119,6 +1176,19 @@ class ConfigManagerDialog(QDialog):
             self.youglish_accent_combo.setCurrentIndex(index)
         self.youglish_accent_combo.blockSignals(blocked)
 
+    def _select_oaad_accent(self, accent: str) -> None:
+        normalized = (accent or "us").lower()
+        if self.oaad_accent_combo is None:
+            return
+        index = self.oaad_accent_combo.findData(normalized)
+        if index == -1:
+            normalized = "us"
+            index = self.oaad_accent_combo.findData(normalized)
+        blocked = self.oaad_accent_combo.blockSignals(True)
+        if index != -1:
+            self.oaad_accent_combo.setCurrentIndex(index)
+        self.oaad_accent_combo.blockSignals(blocked)
+
     def _update_youglish_enabled_state(self) -> None:
         enabled = self.youglish_enable_checkbox.isChecked()
         for widget in (
@@ -1126,6 +1196,16 @@ class ConfigManagerDialog(QDialog):
             self.youglish_target_input,
             self.youglish_accent_combo,
             self.youglish_overwrite_checkbox,
+        ):
+            widget.setEnabled(enabled)
+
+    def _update_oaad_enabled_state(self) -> None:
+        enabled = self.oaad_enable_checkbox.isChecked()
+        for widget in (
+            self.oaad_source_input,
+            self.oaad_target_input,
+            self.oaad_accent_combo,
+            self.oaad_overwrite_checkbox,
         ):
             widget.setEnabled(enabled)
 

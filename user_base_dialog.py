@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, Sequence, Tuple
 from anki.notes import Note as AnkiNote
 from aqt.qt import QSettings
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -43,10 +44,14 @@ IMAGE_MAPPING_SEPARATOR = "->"
 class UserBaseDialog(QWidget):
     """Runtime editor that mirrors the configuration manager sections."""
 
-    def __init__(self, app_settings: QSettings, selected_notes: list[AnkiNote]):
+    def __init__(self, app_settings: QSettings, selected_notes: list[AnkiNote], active_config=None):
         super().__init__()
         self.app_settings = app_settings
         self.selected_notes = selected_notes
+        self._active_config = active_config
+        self._text_api_keys: Dict[str, str] = {}
+        self._image_api_keys: Dict[str, str] = {}
+        self._audio_api_keys: Dict[str, str] = {}
         self.card_fields = sorted(
             {field for note in selected_notes for field in note.keys()}
         )
@@ -58,6 +63,10 @@ class UserBaseDialog(QWidget):
             "image": -1,
             "audio": -1,
         }
+        if self._active_config:
+            self._text_api_keys = dict(self._active_config.text_provider_api_keys or {})
+            self._image_api_keys = dict(self._active_config.image_provider_api_keys or {})
+            self._audio_api_keys = dict(self._active_config.audio_provider_api_keys or {})
         self._build_ui()
         self._install_dirty_watchers()
         self._load_from_settings()
@@ -265,8 +274,7 @@ class UserBaseDialog(QWidget):
         container_layout.addWidget(self.audio_section)
 
         # YouGlish links -------------------------------------------------
-        self.youglish_group = QGroupBox("YouGlish links")
-        youglish_form = QFormLayout(self.youglish_group)
+        self.youglish_group, youglish_form = self._create_titled_group("YouGlish links")
         youglish_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         self.youglish_enable_checkbox = QCheckBox("Enable YouGlish link generation")
         self.youglish_enable_checkbox.stateChanged.connect(
@@ -287,6 +295,28 @@ class UserBaseDialog(QWidget):
         self.youglish_overwrite_checkbox = QCheckBox("Always overwrite existing value")
         youglish_form.addRow(self.youglish_overwrite_checkbox)
         container_layout.addWidget(self.youglish_group)
+
+        # OAAD links ----------------------------------------------------
+        self.oaad_group, oaad_form = self._create_titled_group("OAAD links")
+        oaad_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        self.oaad_enable_checkbox = QCheckBox("Enable OAAD link generation")
+        self.oaad_enable_checkbox.stateChanged.connect(
+            lambda _: self._update_oaad_enabled_state()
+        )
+        oaad_form.addRow(self.oaad_enable_checkbox)
+        self.oaad_source_input = QLineEdit()
+        self.oaad_source_input.setPlaceholderText("_word")
+        oaad_form.addRow(QLabel("Source field:"), self.oaad_source_input)
+        self.oaad_target_input = QLineEdit()
+        self.oaad_target_input.setPlaceholderText("_oaad")
+        oaad_form.addRow(QLabel("Target field:"), self.oaad_target_input)
+        self.oaad_accent_combo = QComboBox()
+        self.oaad_accent_combo.addItem("US", "us")
+        self.oaad_accent_combo.addItem("UK", "uk")
+        oaad_form.addRow(QLabel("Accent:"), self.oaad_accent_combo)
+        self.oaad_overwrite_checkbox = QCheckBox("Always overwrite existing value")
+        oaad_form.addRow(self.oaad_overwrite_checkbox)
+        container_layout.addWidget(self.oaad_group)
 
         # Ensure mapping editors respond to enable toggles
         self.text_section.enable_checkbox.stateChanged.connect(
@@ -344,6 +374,12 @@ class UserBaseDialog(QWidget):
         self.youglish_target_input.textChanged.connect(self._on_field_modified)
         self.youglish_accent_combo.currentIndexChanged.connect(self._on_field_modified)
         self.youglish_overwrite_checkbox.stateChanged.connect(self._on_field_modified)
+        # OAAD inputs
+        self.oaad_enable_checkbox.stateChanged.connect(self._on_field_modified)
+        self.oaad_source_input.textChanged.connect(self._on_field_modified)
+        self.oaad_target_input.textChanged.connect(self._on_field_modified)
+        self.oaad_accent_combo.currentIndexChanged.connect(self._on_field_modified)
+        self.oaad_overwrite_checkbox.stateChanged.connect(self._on_field_modified)
         # Auto/schedule inputs
         self.auto_generate_checkbox.stateChanged.connect(self._on_field_modified)
         self.auto_queue_display_field_input.textChanged.connect(self._on_field_modified)
@@ -411,7 +447,15 @@ class UserBaseDialog(QWidget):
             "audio_model": self.audio_model_input.text().strip(),
             "audio_voice": self.audio_voice_input.text().strip(),
             "audio_format": self.audio_format_input.text().strip(),
+            "text_provider_key": self._text_api_keys.get(text_provider[0], ""),
+            "image_provider_key": self._image_api_keys.get(image_provider[0], ""),
+            "audio_provider_key": self._audio_api_keys.get(audio_provider[0], ""),
             "auto_generate_on_add": self.auto_generate_checkbox.isChecked(),
+            "oaad_enabled": self.oaad_enable_checkbox.isChecked(),
+            "oaad_source": self.oaad_source_input.text().strip(),
+            "oaad_target": self.oaad_target_input.text().strip(),
+            "oaad_accent": self.oaad_accent_combo.currentData(),
+            "oaad_overwrite": self.oaad_overwrite_checkbox.isChecked(),
             "youglish_enabled": self.youglish_enable_checkbox.isChecked(),
             "youglish_source": self.youglish_source_input.text().strip(),
             "youglish_target": self.youglish_target_input.text().strip(),
@@ -445,12 +489,21 @@ class UserBaseDialog(QWidget):
         if kind == "text":
             combo = self.text_section.provider_combo
             update_button = self._update_text_reset_button
+            key_map = self._text_api_keys
+            target_input = self.api_key_input
+            defaults_fn = self._apply_text_provider_defaults
         elif kind == "image":
             combo = self.image_section.provider_combo
             update_button = self._update_image_reset_button
+            key_map = self._image_api_keys
+            target_input = self.image_api_key_input
+            defaults_fn = self._apply_image_provider_defaults
         else:
             combo = self.audio_section.provider_combo
             update_button = self._update_audio_reset_button
+            key_map = self._audio_api_keys
+            target_input = self.audio_api_key_input
+            defaults_fn = self._apply_audio_provider_defaults
         if combo is None:
             return
         previous_index = self._provider_indices.get(kind, -1)
@@ -468,6 +521,13 @@ class UserBaseDialog(QWidget):
             update_button()
             return
         self._provider_indices[kind] = index
+        provider = str(combo.currentData() or "")
+        # Load stored key for this provider if present, otherwise defaults.
+        stored_key = key_map.get(provider, "")
+        if stored_key:
+            target_input.setText(stored_key)
+        else:
+            defaults_fn(force=False)
         update_button()
         self._mark_dirty()
 
@@ -646,6 +706,37 @@ class UserBaseDialog(QWidget):
             )
         )
 
+        self.oaad_enable_checkbox.setChecked(
+            self._get_bool_setting(SettingsNames.OAAD_ENABLED_SETTING_NAME, True)
+        )
+        self.oaad_source_input.setText(
+            self.app_settings.value(
+                SettingsNames.OAAD_SOURCE_FIELD_SETTING_NAME,
+                defaultValue="_word",
+                type=str,
+            )
+            or "_word"
+        )
+        self.oaad_target_input.setText(
+            self.app_settings.value(
+                SettingsNames.OAAD_TARGET_FIELD_SETTING_NAME,
+                defaultValue="_oaad",
+                type=str,
+            )
+            or "_oaad"
+        )
+        self._select_oaad_accent(
+            self.app_settings.value(
+                SettingsNames.OAAD_ACCENT_SETTING_NAME,
+                defaultValue="us",
+                type=str,
+            )
+            or "us"
+        )
+        self.oaad_overwrite_checkbox.setChecked(
+            self._get_bool_setting(SettingsNames.OAAD_OVERWRITE_SETTING_NAME, False)
+        )
+
         youglish_enabled = self._get_bool_setting(
             SettingsNames.YOUGLISH_ENABLED_SETTING_NAME, True
         )
@@ -678,6 +769,7 @@ class UserBaseDialog(QWidget):
             self._get_bool_setting(SettingsNames.YOUGLISH_OVERWRITE_SETTING_NAME, False)
         )
         self._update_youglish_enabled_state()
+        self._update_oaad_enabled_state()
 
         self._update_text_reset_button()
         self._update_image_reset_button()
@@ -745,6 +837,10 @@ class UserBaseDialog(QWidget):
         if audio_enabled and has_audio_mapping and not self.audio_api_key_input.text().strip():
             self._show_error("Enter the speech API key before generating audio.")
             return False
+        if self.oaad_enable_checkbox.isChecked():
+            if not self.oaad_source_input.text().strip() or not self.oaad_target_input.text().strip():
+                self._show_error("Enter both source and target fields for OAAD links.")
+                return False
         if self.youglish_enable_checkbox.isChecked():
             if not self.youglish_source_input.text().strip() or not self.youglish_target_input.text().strip():
                 self._show_error("Enter both source and target fields for YouGlish links.")
@@ -764,8 +860,14 @@ class UserBaseDialog(QWidget):
         self.app_settings.setValue(SettingsNames.RETRY_LIMIT_SETTING_NAME, retry_limit)
         self.app_settings.setValue(SettingsNames.RETRY_DELAY_SETTING_NAME, retry_delay)
 
+        text_provider = self.text_section.provider()
+        image_provider = self.image_section.provider()
+        audio_provider = self.audio_section.provider()
+
+        current_text_key = self.api_key_input.text().strip()
+        self._text_api_keys[text_provider[0]] = current_text_key
         self.app_settings.setValue(
-            SettingsNames.API_KEY_SETTING_NAME, self.api_key_input.text().strip()
+            SettingsNames.API_KEY_SETTING_NAME, current_text_key
         )
         self.app_settings.setValue(
             SettingsNames.ENDPOINT_SETTING_NAME, self.endpoint_input.text().strip()
@@ -811,9 +913,11 @@ class UserBaseDialog(QWidget):
             SettingsNames.IMAGE_MAPPING_SETTING_NAME,
             self._encode_mapping_entries(self.image_mapping_editor.get_entries()),
         )
+        current_image_key = self.image_api_key_input.text().strip()
+        self._image_api_keys[image_provider[0]] = current_image_key
         self.app_settings.setValue(
             SettingsNames.IMAGE_API_KEY_SETTING_NAME,
-            self.image_api_key_input.text().strip(),
+            current_image_key,
         )
         self.app_settings.setValue(
             SettingsNames.IMAGE_ENDPOINT_SETTING_NAME,
@@ -832,9 +936,11 @@ class UserBaseDialog(QWidget):
             SettingsNames.AUDIO_MAPPING_SETTING_NAME,
             self._encode_mapping_entries(self.audio_mapping_editor.get_entries()),
         )
+        current_audio_key = self.audio_api_key_input.text().strip()
+        self._audio_api_keys[audio_provider[0]] = current_audio_key
         self.app_settings.setValue(
             SettingsNames.AUDIO_API_KEY_SETTING_NAME,
-            self.audio_api_key_input.text().strip(),
+            current_audio_key,
         )
         self.app_settings.setValue(
             SettingsNames.AUDIO_ENDPOINT_SETTING_NAME,
@@ -891,6 +997,26 @@ class UserBaseDialog(QWidget):
         self.app_settings.setValue(
             SettingsNames.SCHEDULE_NOTICE_SECONDS_SETTING_NAME,
             self.schedule_notice_seconds_input.value(),
+        )
+        self.app_settings.setValue(
+            SettingsNames.OAAD_ENABLED_SETTING_NAME,
+            self.oaad_enable_checkbox.isChecked(),
+        )
+        self.app_settings.setValue(
+            SettingsNames.OAAD_SOURCE_FIELD_SETTING_NAME,
+            self.oaad_source_input.text().strip() or "_word",
+        )
+        self.app_settings.setValue(
+            SettingsNames.OAAD_TARGET_FIELD_SETTING_NAME,
+            self.oaad_target_input.text().strip() or "_oaad",
+        )
+        self.app_settings.setValue(
+            SettingsNames.OAAD_ACCENT_SETTING_NAME,
+            str(self.oaad_accent_combo.currentData() or "us"),
+        )
+        self.app_settings.setValue(
+            SettingsNames.OAAD_OVERWRITE_SETTING_NAME,
+            self.oaad_overwrite_checkbox.isChecked(),
         )
         self.app_settings.setValue(
             SettingsNames.YOUGLISH_ENABLED_SETTING_NAME,
@@ -1041,6 +1167,27 @@ class UserBaseDialog(QWidget):
             self.youglish_target_input,
             self.youglish_accent_combo,
             self.youglish_overwrite_checkbox,
+        ):
+            widget.setEnabled(enabled)
+
+    def _select_oaad_accent(self, accent: str) -> None:
+        normalized = (accent or "us").lower()
+        index = self.oaad_accent_combo.findData(normalized)
+        if index == -1:
+            normalized = "us"
+            index = self.oaad_accent_combo.findData(normalized)
+        blocked = self.oaad_accent_combo.blockSignals(True)
+        if index != -1:
+            self.oaad_accent_combo.setCurrentIndex(index)
+        self.oaad_accent_combo.blockSignals(blocked)
+
+    def _update_oaad_enabled_state(self) -> None:
+        enabled = self.oaad_enable_checkbox.isChecked()
+        for widget in (
+            self.oaad_source_input,
+            self.oaad_target_input,
+            self.oaad_accent_combo,
+            self.oaad_overwrite_checkbox,
         ):
             widget.setEnabled(enabled)
 

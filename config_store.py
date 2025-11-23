@@ -52,6 +52,11 @@ class LLMConfig:
     schedule_notice_seconds: int = 30
     auto_queue_silent: bool = True
     auto_queue_display_field: str = ""
+    oaad_enabled: bool = True
+    oaad_source_field: str = "_word"
+    oaad_target_field: str = "_oaad"
+    oaad_accent: str = "us"
+    oaad_overwrite: bool = False
     youglish_enabled: bool = True
     youglish_source_field: str = "_word"
     youglish_target_field: str = "_youglish"
@@ -101,6 +106,11 @@ class LLMConfig:
             "schedule_notice_seconds": self.schedule_notice_seconds,
             "auto_queue_silent": self.auto_queue_silent,
             "auto_queue_display_field": self.auto_queue_display_field,
+            "oaad_enabled": self.oaad_enabled,
+            "oaad_source_field": self.oaad_source_field,
+            "oaad_target_field": self.oaad_target_field,
+            "oaad_accent": self.oaad_accent,
+            "oaad_overwrite": self.oaad_overwrite,
             "youglish_enabled": self.youglish_enabled,
             "youglish_source_field": self.youglish_source_field,
             "youglish_target_field": self.youglish_target_field,
@@ -152,6 +162,11 @@ class LLMConfig:
             schedule_notice_seconds=int(data.get("schedule_notice_seconds", 30) or 30),
             auto_queue_silent=bool(data.get("auto_queue_silent", True)),
             auto_queue_display_field=str(data.get("auto_queue_display_field", "") or ""),
+            oaad_enabled=bool(data.get("oaad_enabled", True)),
+            oaad_source_field=str(data.get("oaad_source_field", "_word") or "_word"),
+            oaad_target_field=str(data.get("oaad_target_field", "_oaad") or "_oaad"),
+            oaad_accent=str(data.get("oaad_accent", "us") or "us"),
+            oaad_overwrite=bool(data.get("oaad_overwrite", False)),
             youglish_enabled=bool(data.get("youglish_enabled", True)),
             youglish_source_field=str(data.get("youglish_source_field", "_word") or "_word"),
             youglish_target_field=str(data.get("youglish_target_field", "_youglish") or "_youglish"),

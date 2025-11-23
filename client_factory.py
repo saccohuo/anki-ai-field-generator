@@ -124,7 +124,7 @@ class ClientFactory:
         self._apply_config_to_settings(config)
 
     def make_runtime_panel(self) -> UserBaseDialog:
-        panel = UserBaseDialog(self.app_settings, self.notes)
+        panel = UserBaseDialog(self.app_settings, self.notes, active_config=self.active_config)
         allowed_ids = set(self.active_config.note_type_ids or [])
         selected_ids = {self._note_type_id(note) for note in self.notes}
         allowed_names = [self._note_type_lookup.get(note_id, note_id) for note_id in allowed_ids]
@@ -323,6 +323,26 @@ class ClientFactory:
             SettingsNames.YOUGLISH_OVERWRITE_SETTING_NAME,
             config.youglish_overwrite,
         )
+        self.app_settings.setValue(
+            SettingsNames.OAAD_ENABLED_SETTING_NAME,
+            config.oaad_enabled,
+        )
+        self.app_settings.setValue(
+            SettingsNames.OAAD_SOURCE_FIELD_SETTING_NAME,
+            config.oaad_source_field,
+        )
+        self.app_settings.setValue(
+            SettingsNames.OAAD_TARGET_FIELD_SETTING_NAME,
+            config.oaad_target_field,
+        )
+        self.app_settings.setValue(
+            SettingsNames.OAAD_ACCENT_SETTING_NAME,
+            config.oaad_accent,
+        )
+        self.app_settings.setValue(
+            SettingsNames.OAAD_OVERWRITE_SETTING_NAME,
+            config.oaad_overwrite,
+        )
         self.app_settings.setValue(SettingsNames.RETRY_LIMIT_SETTING_NAME, config.retry_limit)
         self.app_settings.setValue(SettingsNames.RETRY_DELAY_SETTING_NAME, config.retry_delay)
         self.app_settings.setValue(SettingsNames.IMAGE_MAPPING_SETTING_NAME, config.image_prompt_mappings)
@@ -513,7 +533,69 @@ class ClientFactory:
             generate_text=False,
             generate_images=False,
             generate_audio=False,
+            generate_oaad=False,
             generate_youglish=True,
+        )
+
+        def on_success() -> None:
+            browser.mw.reset()
+            self.progress_dialog = None
+
+        if silent:
+            _increment_bg()
+            set_active_bg_notes([n.id for n in self.notes if getattr(n, "id", None)])
+            note_processor.finished.connect(
+                lambda: self._on_background_done(note_processor, on_success)
+            )
+            note_processor.error.connect(
+                lambda text: self._on_background_error(note_processor, text)
+            )
+            self._background_workers.append(note_processor)
+            note_processor.start()
+            return
+
+        dialog = ProgressDialog(
+            note_processor, success_callback=on_success, suppress_front=suppress_front
+        )
+        if suppress_front:
+            dialog.hide()
+        else:
+            dialog.show()
+        self.progress_dialog = dialog
+        _set_active_progress_dialog(dialog)
+
+        def clear_dialog_reference() -> None:
+            if getattr(self, "progress_dialog", None) is dialog:
+                setattr(self, "progress_dialog", None)
+            _clear_active_progress_dialog(dialog)
+
+        dialog.destroyed.connect(clear_dialog_reference)
+
+    def run_oaad_only(self, browser, *, suppress_front: bool = False, silent: bool = False) -> None:
+        if not self.notes:
+            QMessageBox.information(
+                browser,
+                "Anki AI",
+                "Select at least one note before updating OAAD links.",
+            )
+            return
+        if not self._get_bool_setting(SettingsNames.OAAD_ENABLED_SETTING_NAME, True):
+            QMessageBox.information(
+                browser,
+                "Anki AI",
+                "OAAD link generation is disabled in the current configuration.",
+            )
+            return
+        note_processor = NoteProcessor(
+            self.notes,
+            self.get_client(),
+            self.app_settings,
+            speech_client=None,
+            generate_text=False,
+            generate_images=False,
+            generate_audio=False,
+            generate_oaad=True,
+            generate_youglish=False,
         )
 
         def on_success() -> None:

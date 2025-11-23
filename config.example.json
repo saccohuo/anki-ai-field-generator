@@ -2,6 +2,8 @@
   // Recommended text models: gpt-4o (OpenAI), gpt-4o-mini (OpenAI), claude-3.5-sonnet (Anthropic)
   // Recommended image models: gemini-2.0-flash-image (Google), dalle-3 (OpenAI)
   // Recommended speech models: gemini-2.0-flash-tts (Google)
+
+  // OpenAI TTS models: gpt-4o-mini-tts, tts-1, tts-1-hd
   "configs": [
     {
       "name": "Default",
@@ -40,6 +42,11 @@
       "schedule_notice_seconds": 30,
       "auto_queue_silent": true,
       "auto_queue_display_field": "",
+      "oaad_enabled": true,
+      "oaad_source_field": "_word",
+      "oaad_target_field": "_oaad",
+      "oaad_accent": "us",
+      "oaad_overwrite": false,
       "youglish_enabled": true,
       "youglish_source_field": "_word",
       "youglish_target_field": "_youglish",
@@ -93,7 +100,11 @@
       "text_mapping_entries": [
         { "key": "phonType", "field": "_phonType", "enabled": true },
         { "key": "phonetic", "field": "_phonetic", "enabled": true },
-        { "key": "sentenceMarked", "field": "_sentenceMarked", "enabled": true },
+        {
+          "key": "sentenceMarked",
+          "field": "_sentenceMarked",
+          "enabled": true
+        },
         { "key": "wordTran", "field": "_wordTran", "enabled": true },
         { "key": "sentenceOrig", "field": "_sentenceOrig", "enabled": true },
         { "key": "definition", "field": "_definition", "enabled": true },
@@ -104,9 +115,7 @@
         { "key": "imagePrompt", "field": "_imagePrompt", "enabled": true }
       ],
       "image_provider": "gemini",
-      "image_prompt_mappings": [
-        "_imagePrompt->_image::1"
-      ],
+      "image_prompt_mappings": ["_imagePrompt->_image::1"],
       "image_api_key": "your-gemini-key",
       "image_provider_api_keys": {
         "gemini": "your-gemini-key"

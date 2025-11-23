@@ -11,6 +11,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote_plus
+from urllib import request as urllib_request, error as urllib_error
 
 from anki.notes import Note as AnkiNote
 from aqt.qt import QSettings
@@ -45,6 +46,7 @@ COLLECTION_LOCK_FRAGMENTS = (
     "database table is locked",
     "the database file is locked",
 )
+OAAD_HOME_URL = "https://www.oxfordlearnersdictionaries.com/"
 
 
 @dataclass(frozen=True)
@@ -73,6 +75,7 @@ class NoteProcessor(QThread):
         generate_images: bool = True,
         generate_audio: bool = True,
         generate_youglish: bool = True,
+        generate_oaad: bool = True,
         missing_field_is_error: bool = False,
     ) -> None:
         super().__init__()
@@ -192,6 +195,43 @@ class NoteProcessor(QThread):
             default=False,
         )
         self._generate_youglish = generate_youglish
+        self._oaad_enabled = self._get_bool_setting(
+            self.settings,
+            SettingsNames.OAAD_ENABLED_SETTING_NAME,
+            default=True,
+        )
+        self._oaad_source_field = (
+            self.settings.value(
+                SettingsNames.OAAD_SOURCE_FIELD_SETTING_NAME,
+                defaultValue="_word",
+                type=str,
+            )
+            or "_word"
+        ).strip()
+        self._oaad_target_field = (
+            self.settings.value(
+                SettingsNames.OAAD_TARGET_FIELD_SETTING_NAME,
+                defaultValue="_oaad",
+                type=str,
+            )
+            or "_oaad"
+        ).strip()
+        oaad_accent_raw = (
+            self.settings.value(
+                SettingsNames.OAAD_ACCENT_SETTING_NAME,
+                defaultValue="us",
+                type=str,
+            )
+            or "us"
+        ).strip()
+        oaad_normalized = oaad_accent_raw.lower()
+        self._oaad_accent = oaad_normalized if oaad_normalized in {"us", "uk"} else "us"
+        self._oaad_overwrite = self._get_bool_setting(
+            self.settings,
+            SettingsNames.OAAD_OVERWRITE_SETTING_NAME,
+            default=False,
+        )
+        self._generate_oaad = generate_oaad
         mappings = settings.value(
             SettingsNames.IMAGE_MAPPING_SETTING_NAME, type="QStringList"
         ) or []
@@ -256,6 +296,12 @@ class NoteProcessor(QThread):
             and self._youglish_enabled
             and self._youglish_source_field
             and self._youglish_target_field
+        )
+        self._enable_oaad = bool(
+            generate_oaad
+            and self._oaad_enabled
+            and self._oaad_source_field
+            and self._oaad_target_field
         )
         if not self._enable_audio_generation:
             self._speech_client = None
@@ -480,6 +526,26 @@ class NoteProcessor(QThread):
                 for mapping in self.audio_field_mappings:
                     note_state["audio"][mapping] = True
 
+            if self._enable_oaad:
+                try:
+                    note, oaad_fields = self._apply_oaad_links(
+                        note,
+                        note_state,
+                        base_progress=base_progress,
+                        per_card=per_card,
+                    )
+                    self.notes[self.current_index] = note
+                    if oaad_fields:
+                        self._commit_note_sections(
+                            note,
+                            [("oaad", oaad_fields)],
+                        )
+                except ExternalException as exc:
+                    self._emit_stage_error("OAAD 链接生成", exc)
+                    return
+            else:
+                note_state["oaad"] = True
+
             if self._enable_youglish:
                 try:
                     note, youglish_fields = self._apply_youglish_links(
@@ -674,6 +740,83 @@ class NoteProcessor(QThread):
 
         return note, overwritten_fields
 
+    def _apply_oaad_links(
+        self,
+        note: AnkiNote,
+        state: dict[str, Any],
+        *,
+        base_progress: float,
+        per_card: float,
+    ) -> tuple[AnkiNote, list[str]]:
+        if state.get("oaad", False):
+            return note, []
+        state["oaad"] = True
+        if not self._oaad_source_field or not self._oaad_target_field:
+            return note, []
+        if (
+            self._oaad_source_field not in note
+            or self._oaad_target_field not in note
+        ):
+            return note, []
+        source_raw = str(note[self._oaad_source_field])
+        term = self._prepare_oaad_term(source_raw)
+        current_value = str(note[self._oaad_target_field] or "")
+        if current_value.strip() and not self._oaad_overwrite:
+            return note, []
+        base_url = OAAD_HOME_URL
+        link = base_url
+        if term:
+            candidate = self._build_oaad_url(term)
+            exists = self._probe_oaad_url(candidate)
+            self._log_event(
+                "oaad_probe",
+                {
+                    "note_id": getattr(note, "id", None),
+                    "term": term,
+                    "candidate": candidate,
+                    "exists": exists,
+                    "accent": self._oaad_accent,
+                },
+            )
+            link = candidate if exists else base_url
+        else:
+            self._log_event(
+                "oaad_skip_empty_term",
+                {"note_id": getattr(note, "id", None), "raw": source_raw},
+            )
+
+        note, conflicts = self._check_for_conflicts(
+            note,
+            "oaad",
+            [self._oaad_target_field],
+            {self._oaad_target_field: link},
+        )
+        if conflicts:
+            decision = self._wait_for_conflict_resolution(
+                note.id,
+                "oaad",
+                conflicts,
+            )
+            if decision == "skip":
+                self._update_snapshot_section(
+                    note,
+                    "oaad",
+                    [self._oaad_target_field],
+                )
+                return note, []
+            if decision == "abort":
+                raise ExternalException(
+                    "OAAD 链接写入已取消。",
+                    code=ErrorCode.GENERIC,
+                )
+        progress_hint = int(min(99, base_progress + (per_card * 0.82)))
+        self.progress_updated.emit(
+            progress_hint,
+            "Writing OAAD link...",
+        )
+        note[self._oaad_target_field] = link
+        return note, [self._oaad_target_field]
+
     def _apply_youglish_links(
         self,
         note: AnkiNote,
@@ -733,6 +876,43 @@ class NoteProcessor(QThread):
         )
         note[self._youglish_target_field] = link
         return note, [self._youglish_target_field]
+
+    def _prepare_oaad_term(self, value: str) -> str:
+        text = html.unescape(str(value or ""))
+        # strip HTML tags
+        text = re.sub(r"<[^>]+>", " ", text)
+        sanitized = text.replace("::", ":").replace(";", " ").strip()
+        sanitized = re.sub(r"\s+", " ", sanitized)
+        return sanitized
+
+    def _build_oaad_url(self, term: str) -> str:
+        encoded = quote_plus(term.strip())
+        if self._oaad_accent == "us":
+            return (
+                f"https://www.oxfordlearnersdictionaries.com/us/definition/american_english/"
+                f"{encoded}?q={encoded}"
+            )
+        return (
+            f"https://www.oxfordlearnersdictionaries.com/definition/english/{encoded}"
+            f"?q={encoded}"
+        )
+
+    def _probe_oaad_url(self, url: str) -> bool:
+        try:
+            req = urllib_request.Request(url, method="GET")
+            req.add_header("User-Agent", "anki-ai-field-generator/oaad-probe")
+            with urllib_request.urlopen(req, timeout=3) as resp:  # nosec B310
+                status = getattr(resp, "status", 200)
+                self._log_event("oaad_probe_status", {"url": url, "status": status})
+                return 200 <= status < 400
+        except urllib_error.HTTPError as exc:
+            self._log_event("oaad_probe_http_error", {"url": url, "code": exc.code})
+            if exc.code == 404:
+                return False
+            return False
+        except Exception as err:
+            self._log_event("oaad_probe_error", {"url": url, "error": str(err)})
+            return False
 
     def _write_audio_to_media(
         self,
@@ -869,6 +1049,11 @@ class NoteProcessor(QThread):
             "text": (not self._enable_text_generation) or not text_fields_present,
             "image": image_state,
             "audio": audio_state,
+            "oaad": (
+                not self._enable_oaad
+                or not self._oaad_source_field
+                or not self._oaad_target_field
+            ),
             "youglish": (
                 not self._enable_youglish
                 or not self._youglish_source_field
@@ -892,6 +1077,15 @@ class NoteProcessor(QThread):
                     target: note[target] if target in note else ""
                     for _, target in self.audio_field_mappings
                 },
+                "oaad": {
+                    self._oaad_target_field: (
+                        note[self._oaad_target_field]
+                        if self._oaad_target_field in note
+                        else ""
+                    )
+                }
+                if self._oaad_target_field
+                else {},
                 "youglish": {
                     self._youglish_target_field: (
                         note[self._youglish_target_field]
@@ -1269,9 +1463,16 @@ class NoteProcessor(QThread):
             fragment in message for fragment in COLLECTION_LOCK_FRAGMENTS
         )
 
-    def _log_event(self, message: str, *, exc: Optional[BaseException] = None) -> None:
+    def _log_event(
+        self,
+        message: str,
+        data: Optional[dict[str, Any]] = None,
+        *,
+        exc: Optional[BaseException] = None,
+    ) -> None:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        entry_lines = [f"[{timestamp}] {message}"]
+        payload = f" {data}" if data else ""
+        entry_lines = [f"[{timestamp}] {message}{payload}"]
         if exc is not None:
             entry_lines.append(f"Exception: {exc}")
         entry = " ".join(entry_lines) + "\n"

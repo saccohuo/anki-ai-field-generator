@@ -138,6 +138,33 @@ def _build_youglish_url(term: str, accent: str) -> str:
     return f"https://youglish.com/pronounce/{encoded_term}/english?accent={accent_value}"
 
 
+def _oaad_action_label() -> str:
+    return f"Update OAAD Links ({_current_config_name()})"
+
+
+def _extract_oaad_term(value: str) -> str:
+    text = html.unescape(str(value or ""))
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def _build_oaad_url(term: str, accent: str) -> str:
+    if not term:
+        return "https://www.oxfordlearnersdictionaries.com/"
+    normalized = (accent or "us").lower()
+    encoded_term = quote_plus(term.strip())
+    if normalized == "us":
+        return (
+            "https://www.oxfordlearnersdictionaries.com/us/definition/american_english/"
+            f"{encoded_term}?q={encoded_term}"
+        )
+    return (
+        "https://www.oxfordlearnersdictionaries.com/definition/english/"
+        f"{encoded_term}?q={encoded_term}"
+    )
+
+
 def _open_youglish_for_selection(browser) -> None:
     note_ids = list(browser.selectedNotes())
     if not note_ids:
@@ -231,6 +258,93 @@ def _open_youglish_for_selection(browser) -> None:
         webbrowser.open(url)
 
 
+def _open_oaad_for_selection(browser) -> None:
+    note_ids = list(browser.selectedNotes())
+    if not note_ids:
+        QMessageBox.information(browser, "Anki AI", "Select a note to open OAAD.")
+        return
+    open_all = False
+    if len(note_ids) > 1:
+        response = QMessageBox.question(
+            browser,
+            "Open OAAD",
+            (
+                f"已选择 {len(note_ids)} 条笔记。\n"
+                "是：为全部笔记打开并写入链接。\n"
+                "否：仅处理第一条笔记。\n"
+                "取消：不执行。"
+            ),
+            QMessageBox.StandardButton.Yes
+            | QMessageBox.StandardButton.No
+            | QMessageBox.StandardButton.Cancel,
+        )
+        if response == QMessageBox.StandardButton.Cancel:
+            return
+        open_all = response == QMessageBox.StandardButton.Yes
+    target_note_ids = note_ids if open_all else [note_ids[0]]
+    settings, _ = get_settings()
+    source_field = (
+        settings.value(
+            SettingsNames.OAAD_SOURCE_FIELD_SETTING_NAME,
+            defaultValue="_word",
+            type=str,
+        )
+        or "_word"
+    ).strip()
+    target_field = (
+        settings.value(
+            SettingsNames.OAAD_TARGET_FIELD_SETTING_NAME,
+            defaultValue="_oaad",
+            type=str,
+        )
+        or "_oaad"
+    ).strip()
+    accent = (
+        settings.value(
+            SettingsNames.OAAD_ACCENT_SETTING_NAME,
+            defaultValue="us",
+            type=str,
+        )
+        or "us"
+    )
+    overwrite = settings.value(
+        SettingsNames.OAAD_OVERWRITE_SETTING_NAME,
+        defaultValue=False,
+    )
+    if isinstance(overwrite, str):
+        overwrite = overwrite.lower() in {"1", "true", "yes", "on"}
+    overwrite = bool(overwrite)
+    if not source_field:
+        QMessageBox.information(
+            browser,
+            "Anki AI",
+            "Configure a source field for OAAD links before opening.",
+        )
+        return
+    for note_id in target_note_ids:
+        note = browser.mw.col.get_note(note_id)
+        if note is None:
+            continue
+        if source_field not in note:
+            continue
+        target_value = (
+            str(note[target_field]).strip()
+            if target_field and target_field in note
+            else ""
+        )
+        term = _extract_oaad_term(note[source_field])
+        url = target_value if target_value else _build_oaad_url(term, accent)
+        if not url:
+            continue
+        if target_field and target_field in note and (overwrite or not target_value):
+            note[target_field] = url
+            try:
+                note.col.update_note(note)
+            except Exception:
+                pass
+        webbrowser.open(url)
+
+
 def _confirm_youglish_settings(browser) -> bool:
     settings, _ = get_settings()
     enabled = settings.value(
@@ -301,11 +415,80 @@ def _confirm_youglish_settings(browser) -> bool:
     return response == QMessageBox.StandardButton.Yes
 
 
+def _confirm_oaad_settings(browser) -> bool:
+    settings, _ = get_settings()
+    enabled = settings.value(
+        SettingsNames.OAAD_ENABLED_SETTING_NAME,
+        defaultValue=True,
+    )
+    if isinstance(enabled, str):
+        enabled = enabled.strip().lower() in {"1", "true", "yes", "on"}
+    if not enabled:
+        QMessageBox.information(
+            browser,
+            "Anki AI",
+            "OAAD 生成在当前配置中被关闭，请先在配置中启用。",
+        )
+        return False
+    source = (
+        settings.value(
+            SettingsNames.OAAD_SOURCE_FIELD_SETTING_NAME,
+            defaultValue="_word",
+            type=str,
+        )
+        or "_word"
+    ).strip()
+    target = (
+        settings.value(
+            SettingsNames.OAAD_TARGET_FIELD_SETTING_NAME,
+            defaultValue="_oaad",
+            type=str,
+        )
+        or "_oaad"
+    ).strip()
+    accent = (
+        settings.value(
+            SettingsNames.OAAD_ACCENT_SETTING_NAME,
+            defaultValue="us",
+            type=str,
+        )
+        or "us"
+    )
+    overwrite = settings.value(
+        SettingsNames.OAAD_OVERWRITE_SETTING_NAME,
+        defaultValue=False,
+    )
+    if isinstance(overwrite, str):
+        overwrite = overwrite.lower() in {"1", "true", "yes", "on"}
+    overwrite = bool(overwrite)
+    summary = (
+        f"源字段: {source}\n"
+        f"目标字段: {target}\n"
+        f"方言: {accent.upper()}\n"
+        f"覆盖已有值: {'是' if overwrite else '否'}\n\n"
+        "是否使用以上设置批量更新选中笔记的 OAAD 链接？"
+    )
+    response = QMessageBox.question(
+        browser,
+        "确认 OAAD 配置",
+        summary,
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+    )
+    return response == QMessageBox.StandardButton.Yes
+
+
 def _run_youglish_update(browser) -> None:
     if not _confirm_youglish_settings(browser):
         return
     client_factory = ClientFactory(browser)
     client_factory.run_youglish_only(browser)
+
+
+def _run_oaad_update(browser) -> None:
+    if not _confirm_oaad_settings(browser):
+        return
+    client_factory = ClientFactory(browser)
+    client_factory.run_oaad_only(browser)
 
 
 def _maybe_auto_generate_on_add(note: AnkiNote) -> None:
@@ -479,9 +662,16 @@ def on_setup_menus(browser):
     youglish_update_action = QAction(_youglish_action_label(), mw)
     youglish_update_action.triggered.connect(lambda: _run_youglish_update(browser))
     menu.addAction(youglish_update_action)
+    oaad_action = QAction("Open OAAD Link", mw)
+    oaad_action.triggered.connect(lambda: _open_oaad_for_selection(browser))
+    menu.addAction(oaad_action)
+    oaad_update_action = QAction(_oaad_action_label(), mw)
+    oaad_update_action.triggered.connect(lambda: _run_oaad_update(browser))
+    menu.addAction(oaad_update_action)
     menu.aboutToShow.connect(
-        lambda: youglish_update_action.setText(
-            _youglish_action_label()
+        lambda: (
+            youglish_update_action.setText(_youglish_action_label()),
+            oaad_update_action.setText(_oaad_action_label()),
         )
     )
 
@@ -500,6 +690,12 @@ def on_will_show_context_menu(browser, menu):
     yg_update = QAction(_youglish_action_label(), browser)
     yg_update.triggered.connect(lambda _: _run_youglish_update(browser))
     menu.addAction(yg_update)
+    oaad_action = QAction("Open OAAD Link", browser)
+    oaad_action.triggered.connect(lambda _: _open_oaad_for_selection(browser))
+    menu.addAction(oaad_action)
+    oaad_update = QAction(_oaad_action_label(), browser)
+    oaad_update.triggered.connect(lambda _: _run_oaad_update(browser))
+    menu.addAction(oaad_update)
 
 
 gui_hooks.browser_will_show_context_menu.append(on_will_show_context_menu)
